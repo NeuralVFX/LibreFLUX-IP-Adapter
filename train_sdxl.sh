@@ -1,4 +1,4 @@
-!python tutorial_train_sdxl.py \
+!python train_sdxl.py \
   --pretrained_model_name_or_path="stabilityai/stable-diffusion-xl-base-1.0" \
   --image_encoder_path="laion/CLIP-ViT-H-14-laion2B-s32B-b79K" \
   --data_json_file="/content/LibreFLUX-IP-Adapter/test_dataset/data.json" \
