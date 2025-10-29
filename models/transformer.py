@@ -52,7 +52,7 @@ try:
 except:
     pass
 
-from src.models.attention import (
+from models.attention import (
     FluxSingleAttnProcessor3_0,
     FluxAttnProcessor3_0,
 )
