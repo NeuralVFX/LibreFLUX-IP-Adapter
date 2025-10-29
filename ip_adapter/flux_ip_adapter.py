@@ -5,6 +5,9 @@ from diffusers.models.attention_processor import (
     Attention,
     AttentionProcessor,
 )
+
+from ip_adapter.flux_attention_processor import *
+
 class ImageProjModel(nn.Module):
     def __init__(self, clip_dim=768, cross_attention_dim=3072, num_tokens=16):
         super().__init__()
@@ -59,15 +62,14 @@ class LibreFluxIPAdapter(nn.Module):
         for name in self.culled_transformer_blocks:
             module = self.culled_transformer_blocks[name]
             print (f"Adding Attention IP Wrapper: {name}")
-            with init_empty_weights():
-                module.processor = IPFluxAttnProcessor2_0(
+            module.processor = IPFluxAttnProcessor2_0(
                     hidden_size= hidden_size,
                     cross_attention_dim=cross_attention_dim,
                     num_heads=num_heads,
                     scale=1.0,
                     num_tokens=16,
                 )
-                processor_list.append(module.processor )
+            processor_list.append(module.processor )
 
         # Store adapters as a module list for saving/loading
         self.adapter_modules = torch.nn.ModuleList(processor_list)
