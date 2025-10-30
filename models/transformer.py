@@ -326,6 +326,7 @@ class FluxTransformerBlock(nn.Module):
         temb: torch.FloatTensor,
         image_rotary_emb=None,
         attention_mask: Optional[torch.Tensor] = None,
+        joint_attention_kwargs: dict = {},
     ):
         norm_hidden_states, gate_msa, shift_mlp, scale_mlp, gate_mlp = self.norm1(
             hidden_states, emb=temb
@@ -341,12 +342,22 @@ class FluxTransformerBlock(nn.Module):
                 attention_mask,
             )
 
+        # Adding ability to pass hidden state info to IP Adapter
+        ip_encoder_hidden_states = None
+        ip_layer_scale = 1.0
+        if 'ip_hidden_states' in joint_attention_kwargs:
+            ip_encoder_hidden_states = joint_attention_kwargs['ip_hidden_states']
+        if 'ip_layer_scale' in joint_attention_kwargs:
+            ip_layer_scale = joint_attention_kwargs['ip_layer_scale']
+
         # Attention.
         attention_outputs = self.attn(
             hidden_states=norm_hidden_states,
             encoder_hidden_states=norm_encoder_hidden_states,
             image_rotary_emb=image_rotary_emb,
             attention_mask=attention_mask,
+            ip_encoder_hidden_states=ip_encoder_hidden_states,
+            layer_scale=ip_layer_scale,
         )
         if len(attention_outputs) == 2:
             attn_output, context_attn_output = attention_outputs
@@ -366,8 +377,10 @@ class FluxTransformerBlock(nn.Module):
         ff_output = gate_mlp.unsqueeze(1) * ff_output
 
         hidden_states = hidden_states + ff_output
-        if len(attention_outputs) == 3:
-            hidden_states = hidden_states + ip_attn_output
+
+        # Removing this, was casuing error after adding ip_adapter
+        #if len(attention_outputs) == 3:
+        #    hidden_states = hidden_states + ip_attn_output
 
         # Process attention outputs for the `encoder_hidden_states`.
         context_attn_output = c_gate_msa.unsqueeze(1) * context_attn_output
@@ -388,7 +401,6 @@ class FluxTransformerBlock(nn.Module):
             encoder_hidden_states = encoder_hidden_states.clip(-65504, 65504)
 
         return encoder_hidden_states, hidden_states
-
 
 class LibreFluxTransformer2DModel(
     ModelMixin, ConfigMixin, PeftAdapterMixin, FromOriginalModelMixin
@@ -559,7 +571,7 @@ class LibreFluxTransformer2DModel(
         img_ids: torch.Tensor = None,
         txt_ids: torch.Tensor = None,
         guidance: torch.Tensor = None,
-        joint_attention_kwargs: Optional[Dict[str, Any]] = None,
+        joint_attention_kwargs: dict = {},
         controlnet_block_samples=None,
         controlnet_single_block_samples=None,
         return_dict: bool = True,
@@ -636,7 +648,7 @@ class LibreFluxTransformer2DModel(
         image_rotary_emb = self.pos_embed(ids)
 
         # IP adapter
-        if (
+        """if (
             joint_attention_kwargs is not None
             and "ip_adapter_image_embeds" in joint_attention_kwargs
         ):
@@ -645,7 +657,7 @@ class LibreFluxTransformer2DModel(
             )
             ip_hidden_states = self.encoder_hid_proj(ip_adapter_image_embeds)
             joint_attention_kwargs.update({"ip_hidden_states": ip_hidden_states})
-
+        """
         for index_block, block in enumerate(self.transformer_blocks):
             if (
                 self.training
@@ -676,6 +688,7 @@ class LibreFluxTransformer2DModel(
                         temb,
                         image_rotary_emb,
                         attention_mask,
+                        joint_attention_kwargs,  # Add this line
                         **ckpt_kwargs,
                     )
                 )
@@ -687,6 +700,7 @@ class LibreFluxTransformer2DModel(
                     temb=temb,
                     image_rotary_emb=image_rotary_emb,
                     attention_mask=attention_mask,
+                    joint_attention_kwargs=joint_attention_kwargs  # Add this line
                 )
 
             # controlnet residual

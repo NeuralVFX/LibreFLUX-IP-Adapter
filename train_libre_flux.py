@@ -5,6 +5,7 @@ from pathlib import Path
 import json
 import itertools
 import time
+import copy
 
 
 import torch
@@ -20,11 +21,16 @@ from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection, CLIPTextModelWithProjection
 from transformers import T5TokenizerFast, T5EncoderModel
 from diffusers import FlowMatchEulerDiscreteScheduler
+from diffusers.training_utils import (
+    compute_density_for_timestep_sampling,
+    compute_loss_weighting_for_sd3,
+)
 
 from ip_adapter.flux_ip_adapter import *
 from ip_adapter.utils import is_torch2_available
 
 from models.transformer import *
+from models import encode_prompt_helper
 #if is_torch2_available():
 #    from ip_adapter.attention_processor import IPAttnProcessor2_0 as IPAttnProcessor, AttnProcessor2_0 as AttnProcessor
 #else:
@@ -418,6 +424,7 @@ def main():
         args.pretrained_model_name_or_path,
         subfolder="scheduler"
     )
+    noise_scheduler_copy = copy.deepcopy(noise_scheduler)
 
     transformer.requires_grad_(False)
     vae.requires_grad_(False)
@@ -457,6 +464,16 @@ def main():
         num_workers=args.dataloader_num_workers,
     )
     
+    def get_sigmas(timesteps, n_dim=4, dtype=torch.float32):
+        sigmas = noise_scheduler_copy.sigmas.to(device=accelerator.device, dtype=dtype)
+        schedule_timesteps = noise_scheduler_copy.timesteps.to(accelerator.device)
+        timesteps = timesteps.to(accelerator.device)
+        step_indices = [(schedule_timesteps == t).nonzero().item() for t in timesteps]
+
+        sigma = sigmas[step_indices].flatten()
+        while len(sigma.shape) < n_dim:
+            sigma = sigma.unsqueeze(-1)
+        return sigma
     ###############
     # END UPDATES
     ###############
@@ -472,13 +489,14 @@ def main():
             load_data_time = time.perf_counter() - begin
             with accelerator.accumulate(ip_adapter):
                 # Convert images to latent space
+                """ COMMENTING THIS OLD STUFF OUT - TO USE AS REF FOR NEW CODE                # Sample noise that we'll add to the latents
+
                 with torch.no_grad():
                     # vae of sdxl should use fp32
                     latents = vae.encode(batch["images"].to(accelerator.device, dtype=torch.float32)).latent_dist.sample()
                     latents = latents * vae.config.scaling_factor
                     latents = latents.to(accelerator.device, dtype=weight_dtype)
-
-                # Sample noise that we'll add to the latents
+                
                 noise = torch.randn_like(latents)
                 if args.noise_offset:
                     # https://www.crosslabs.org//blog/diffusion-with-offset-noise
@@ -488,11 +506,92 @@ def main():
                 # Sample a random timestep for each image
                 timesteps = torch.randint(0, noise_scheduler.num_train_timesteps, (bsz,), device=latents.device)
                 timesteps = timesteps.long()
-
+                  
                 # Add noise to the latents according to the noise magnitude at each timestep
                 # (this is the forward diffusion process)
                 noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
-            
+                """
+                ############################
+                # New Flux Noise Injection Code
+                ############################
+
+                pixel_values = batch["images"]
+                with torch.no_grad():
+                    # Use the new standalone function from your helper file
+                    (
+                        prompt_embeds,
+                        pooled_prompt_embeds,
+                        text_ids,
+                        prompt_mask,
+                    ) = encode_prompt_helper.encode_prompt_standalone(
+                        prompt=batch['text_input_ids'], ### Is this wrong in this context?
+                        tokenizer_one=tokenizer_one,
+                        text_encoder_one=text_encoder_one,
+                        tokenizer_two=tokenizer_two,
+                        text_encoder_two=text_encoder_two,
+                        max_sequence_length=args.max_sequence_length,
+                        device=accelerator.device,
+                    )
+                # 1. Convert the actual noised image to latent space.
+                with torch.no_grad():
+
+                    ## MODIFICATION: Move input images to offload_device, encode, then move latents back to main_device.
+                    model_input  = vae.encode(pixel_values).latent_dist.sample()
+                    
+                    model_input = (
+                        model_input - vae.config.shift_factor
+                    ) * vae.config.scaling_factor
+                    model_input = model_input.to(dtype=weight_dtype)
+                    vae_scale_factor = 2 ** (len(vae.config.block_out_channels))
+
+
+                    # Edit 5 - add division by 2 here UNDO
+                    latent_image_ids = LibreFluxIpAdapterPipeline._prepare_latent_image_ids(
+                        model_input.shape[0],
+                        model_input.shape[2],#//2,
+                        model_input.shape[3],#//2,
+                        accelerator.device,
+                        weight_dtype,
+                    )
+                    # 2. Sample noise that we'll add to the latents
+                    noise = torch.randn_like(model_input)
+                    bsz = model_input.shape[0]
+
+                    # 3. Sample a random timestep for each image
+                    # for weighting schemes where we sample timesteps non-uniformly
+                    u = compute_density_for_timestep_sampling(
+                        weighting_scheme=args.weighting_scheme,
+                        batch_size=bsz,
+                        logit_mean=args.logit_mean,
+                        logit_std=args.logit_std,
+                        mode_scale=args.mode_scale,
+                    )
+                    indices = (
+                        u * noise_scheduler_copy.config.num_train_timesteps
+                    ).long()
+                    timesteps = noise_scheduler_copy.timesteps[indices].to(
+                        device=model_input.device
+                    )
+
+                    # 4. Add noise according to flow matching.
+                    # zt = (1 - texp) * x + texp * z1
+                    sigmas = get_sigmas(
+                        timesteps, n_dim=model_input.ndim, dtype=model_input.dtype
+                    )
+                    noisy_model_input = (1.0 - sigmas) * model_input + sigmas * noise
+                    
+                    packed_noisy_model_input = FluxControlNetPipeline._pack_latents(
+                            noisy_model_input,
+                            batch_size=model_input.shape[0],
+                            num_channels_latents=model_input.shape[1],
+                            height=model_input.shape[2],
+                            width=model_input.shape[3],
+                        )
+                    
+                #########################
+                # End New Noise Injection
+                ###########################
+
                 with torch.no_grad():
                     image_embeds = image_encoder(batch["clip_images"].to(accelerator.device, dtype=weight_dtype)).image_embeds
                 image_embeds_ = []
