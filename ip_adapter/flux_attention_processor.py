@@ -178,7 +178,6 @@ class IPFluxAttnProcessor2_0(nn.Module):
             hidden_states = hidden_states.transpose(-1, -2).reshape(batch_size, channel, height, width)
         if context_input_ndim == 4:
             encoder_hidden_states = encoder_hidden_states.transpose(-1, -2).reshape(batch_size, channel, height, width)
- 
         return hidden_states, encoder_hidden_states, ip_encoder_hidden_states_original
  
  

@@ -93,7 +93,12 @@ class LibreFluxIPAdapter(nn.Module):
         # Add ip hidden states to kwargs
         if 'joint_attention_kwargs' not in kwargs:
             kwargs['joint_attention_kwargs'] = {}
-        kwargs['joint_attention_kwargs']['ip_encoder_hidden_states'] = ip_encoder_hidden_states
+        layer_scale = torch.Tensor([1.0])
+        layer_scale = layer_scale.to(dtype=ip_encoder_hidden_states.dtype,
+        device=ip_encoder_hidden_states.device)   
+
+        kwargs['joint_attention_kwargs']['ip_layer_scale'] = layer_scale
+        kwargs['joint_attention_kwargs']['ip_hidden_states'] = ip_encoder_hidden_states
 
         output = self.transformer(*args,
                 **kwargs)

@@ -37,15 +37,14 @@ from models import encode_prompt_helper
 #else:
 #    from ip_adapter.attention_processor import IPAttnProcessor, AttnProcessor
 
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 # Dataset
 class MyDataset(torch.utils.data.Dataset):
 
-    def __init__(self, json_file, tokenizer, tokenizer_2, size=1024, center_crop=True, t_drop_rate=0.05, i_drop_rate=0.05, ti_drop_rate=0.05, image_root_path=""):
+    def __init__(self, json_file, size=1024, center_crop=True, t_drop_rate=0.05, i_drop_rate=0.05, ti_drop_rate=0.05, image_root_path=""):
         super().__init__()
 
-        self.tokenizer = tokenizer
-        self.tokenizer_2 = tokenizer_2
         self.size = size
         self.center_crop = center_crop
         self.i_drop_rate = i_drop_rate
@@ -105,28 +104,10 @@ class MyDataset(torch.utils.data.Dataset):
             text = ""
             drop_image_embed = 1
 
-        # get text and tokenize
-        text_input_ids = self.tokenizer(
-            text,
-            max_length=self.tokenizer.model_max_length,
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt"
-        ).input_ids
-        
-        text_input_ids_2 = self.tokenizer_2(
-            text,
-            max_length=self.tokenizer_2.model_max_length,
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt"
-        ).input_ids
         
         return {
             "image": image,
             "text": text,
-            "text_input_ids": text_input_ids,
-            "text_input_ids_2": text_input_ids_2,
             "clip_image": clip_image,
             "drop_image_embed": drop_image_embed,
             "original_size": original_size,
@@ -143,8 +124,6 @@ def collate_fn(data):
     images = torch.stack([example["image"] for example in data])
     text = [example["text"] for example in data]
 
-    text_input_ids = torch.cat([example["text_input_ids"] for example in data], dim=0)
-    text_input_ids_2 = torch.cat([example["text_input_ids_2"] for example in data], dim=0)
     clip_images = torch.cat([example["clip_image"] for example in data], dim=0)
     drop_image_embeds = [example["drop_image_embed"] for example in data]
     original_size = torch.stack([example["original_size"] for example in data])
@@ -154,8 +133,6 @@ def collate_fn(data):
     return {
         "images": images,
         "text": text,
-        "text_input_ids": text_input_ids,
-        "text_input_ids_2": text_input_ids_2,
         "clip_images": clip_images,
         "drop_image_embeds": drop_image_embeds,
         "original_size": original_size,
@@ -471,6 +448,11 @@ def main():
     # To be used for training, and saving and loading weights
     image_proj_model = ImageProjModel( clip_dim=768, cross_attention_dim=3072, num_tokens=16)
 
+    if args.pretrained_ip_adapter_path is not None:
+        ip_adapter = LibreFluxIPAdapter(transformer,image_proj_model,checkpoint=args.pretrained_ip_adapter_path)
+    else:
+        ip_adapter = LibreFluxIPAdapter(transformer,image_proj_model)
+
     weight_dtype = torch.float32
     if accelerator.mixed_precision == "fp16":
         weight_dtype = torch.float16
@@ -481,18 +463,14 @@ def main():
     text_encoder_one.to(accelerator.device, dtype=weight_dtype)
     text_encoder_two.to(accelerator.device, dtype=weight_dtype)
     image_encoder.to(accelerator.device, dtype=weight_dtype)
-    
+    ip_adapter.to(accelerator.device, dtype=weight_dtype)
 
-    if args.pretrained_ip_adapter_path is not None:
-        ip_adapter = LibreFluxIPAdapter(transformer,image_proj_model,checkpoint=args.pretrained_ip_adapter_path)
-    else:
-        ip_adapter = LibreFluxIPAdapter(transformer,image_proj_model)
 
     # optimizer
     optimizer = torch.optim.AdamW(ip_adapter.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     
     # dataloader
-    train_dataset = MyDataset(args.data_json_file, tokenizer=tokenizer_one, tokenizer_2=tokenizer_two, size=args.resolution, image_root_path=args.data_root_path)
+    train_dataset = MyDataset(args.data_json_file, size=args.resolution, image_root_path=args.data_root_path)
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
         shuffle=True,
@@ -569,6 +547,7 @@ def main():
                         max_sequence_length=args.max_sequence_length,
                         device=accelerator.device,
                     )
+                
                 # 1. Convert the actual noised image to latent space.
                 with torch.no_grad():
 
@@ -639,6 +618,8 @@ def main():
                         image_embeds_.append(image_embed)
                 image_embeds = torch.stack(image_embeds_)
             
+                """ COMMENTING THIS OLD STUFF OUT - TO USE AS REF FOR NEW CODE                # Sample noise that we'll add to the latents
+
                 with torch.no_grad():
                     encoder_output = text_encoder(batch['text_input_ids'].to(accelerator.device), output_hidden_states=True)
                     text_embeds = encoder_output.hidden_states[-2]
@@ -662,11 +643,77 @@ def main():
             
                 # Gather the losses across all processes for logging (if we use distributed training).
                 avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean().item()
-                
+                """
+
+                #######################
+                # New Forward Pass
+                ########################
+                guidance = None
+
+                timesteps = (timesteps / 1000.0)
+                text_ids = [ t for t in text_ids ]
+
+                """model_pred = transformer(
+                    hidden_states=packed_noisy_model_input,
+                    timestep=timesteps,
+                    guidance=guidance,
+                    pooled_projections=pooled_prompt_embeds,
+                    encoder_hidden_states=prompt_embeds,
+                    attention_mask=prompt_mask,
+                    txt_ids=text_ids[0],
+                    img_ids=latent_image_ids[0],
+                    return_dict=False,
+                )[0]"""
+
+
+                model_pred = ip_adapter(
+                    image_embeds,
+                    packed_noisy_model_input,
+                    timestep=timesteps,
+                    guidance=guidance,
+                    pooled_projections=pooled_prompt_embeds,
+                    encoder_hidden_states=prompt_embeds,
+                    attention_mask=prompt_mask,
+                    txt_ids=text_ids[0],
+                    img_ids=latent_image_ids[0],
+                    return_dict=False,
+                )[0]
+
+                # Edit 4 , remove divide by two on height and wiedth  # UNDON
+                model_pred = LibreFluxIpAdapterPipeline._unpack_latents(
+                    model_pred,
+                    height=int(model_input.shape[2] * vae_scale_factor )//2,
+                    width=int(model_input.shape[3] * vae_scale_factor )//2,
+                    vae_scale_factor=vae_scale_factor,
+                )
+
+                # these weighting schemes use a uniform timestep sampling
+                # and instead post-weight the loss
+                weighting = compute_loss_weighting_for_sd3(
+                    weighting_scheme=args.weighting_scheme, sigmas=sigmas
+                )
+
+                # flow matching loss
+                target = noise - model_input
+
+                # Compute regular loss.
+                loss = torch.mean(
+                    (
+                        weighting.float() * (model_pred.float() - target.float()) ** 2
+                    ).reshape(target.shape[0], -1),
+                    1,
+                )
+                loss = loss.mean()
+
+                #########################
+                # End Forward Pass
+                #########################
+
                 # Backpropagate
                 accelerator.backward(loss)
                 optimizer.step()
                 optimizer.zero_grad()
+                avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean().item()
 
                 if accelerator.is_main_process:
                     print("Epoch {}, step {}, data_time: {}, time: {}, step_loss: {}".format(

@@ -535,8 +535,8 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
             latent_image_id_height * latent_image_id_width,
             latent_image_id_channels,
         )
-
-        return latent_image_ids
+      
+        return latent_image_ids.to(dtype=dtype, device=device)
 
     @staticmethod
     def _pack_latents(latents, batch_size, num_channels_latents, height, width):
