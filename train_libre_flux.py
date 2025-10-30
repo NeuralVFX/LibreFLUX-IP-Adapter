@@ -18,13 +18,17 @@ from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration
 from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection, CLIPTextModelWithProjection
+from transformers import T5TokenizerFast, T5EncoderModel
+from diffusers import FlowMatchEulerDiscreteScheduler
 
-from ip_adapter.ip_adapter import ImageProjModel
+from ip_adapter.flux_ip_adapter import *
 from ip_adapter.utils import is_torch2_available
-if is_torch2_available():
-    from ip_adapter.attention_processor import IPAttnProcessor2_0 as IPAttnProcessor, AttnProcessor2_0 as AttnProcessor
-else:
-    from ip_adapter.attention_processor import IPAttnProcessor, AttnProcessor
+
+from models.transformer import *
+#if is_torch2_available():
+#    from ip_adapter.attention_processor import IPAttnProcessor2_0 as IPAttnProcessor, AttnProcessor2_0 as AttnProcessor
+#else:
+#    from ip_adapter.attention_processor import IPAttnProcessor, AttnProcessor
 
 
 # Dataset
@@ -147,47 +151,6 @@ def collate_fn(data):
         "crop_coords_top_left": crop_coords_top_left,
         "target_size": target_size,
     }
-    
-
-class IPAdapter(torch.nn.Module):
-    """IP-Adapter"""
-    def __init__(self, unet, image_proj_model, adapter_modules, ckpt_path=None):
-        super().__init__()
-        self.unet = unet
-        self.image_proj_model = image_proj_model
-        self.adapter_modules = adapter_modules
-
-        if ckpt_path is not None:
-            self.load_from_checkpoint(ckpt_path)
-
-    def forward(self, noisy_latents, timesteps, encoder_hidden_states, unet_added_cond_kwargs, image_embeds):
-        ip_tokens = self.image_proj_model(image_embeds)
-        encoder_hidden_states = torch.cat([encoder_hidden_states, ip_tokens], dim=1)
-        # Predict the noise residual
-        noise_pred = self.unet(noisy_latents, timesteps, encoder_hidden_states, added_cond_kwargs=unet_added_cond_kwargs).sample
-        return noise_pred
-
-    def load_from_checkpoint(self, ckpt_path: str):
-        # Calculate original checksums
-        orig_ip_proj_sum = torch.sum(torch.stack([torch.sum(p) for p in self.image_proj_model.parameters()]))
-        orig_adapter_sum = torch.sum(torch.stack([torch.sum(p) for p in self.adapter_modules.parameters()]))
-
-        state_dict = torch.load(ckpt_path, map_location="cpu")
-
-        # Load state dict for image_proj_model and adapter_modules
-        self.image_proj_model.load_state_dict(state_dict["image_proj"], strict=True)
-        self.adapter_modules.load_state_dict(state_dict["ip_adapter"], strict=True)
-
-        # Calculate new checksums
-        new_ip_proj_sum = torch.sum(torch.stack([torch.sum(p) for p in self.image_proj_model.parameters()]))
-        new_adapter_sum = torch.sum(torch.stack([torch.sum(p) for p in self.adapter_modules.parameters()]))
-
-        # Verify if the weights have changed
-        assert orig_ip_proj_sum != new_ip_proj_sum, "Weights of image_proj_model did not change!"
-        assert orig_adapter_sum != new_adapter_sum, "Weights of adapter_modules did not change!"
-
-        print(f"Successfully loaded weights from checkpoint {ckpt_path}")
-    
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Simple example of a training script.")
@@ -321,7 +284,7 @@ def main():
     if accelerator.is_main_process:
         if args.output_dir is not None:
             os.makedirs(args.output_dir, exist_ok=True)
-
+    """ COMMENTING THIS OLD STUFF OUT - TO USE AS REF FOR NEW CODE
     # Load scheduler, tokenizer and models.
     noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
     tokenizer = CLIPTokenizer.from_pretrained(args.pretrained_model_name_or_path, subfolder="tokenizer")
@@ -331,6 +294,7 @@ def main():
     vae = AutoencoderKL.from_pretrained(args.pretrained_model_name_or_path, subfolder="vae")
     unet = UNet2DConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet")
     image_encoder = CLIPVisionModelWithProjection.from_pretrained(args.image_encoder_path)
+
     # freeze parameters of models to save more memory
     unet.requires_grad_(False)
     vae.requires_grad_(False)
@@ -372,7 +336,8 @@ def main():
     adapter_modules = torch.nn.ModuleList(unet.attn_processors.values())
     
     ip_adapter = IPAdapter(unet, image_proj_model, adapter_modules, args.pretrained_ip_adapter_path)
-    
+
+
     weight_dtype = torch.float32
     if accelerator.mixed_precision == "fp16":
         weight_dtype = torch.float16
@@ -384,7 +349,7 @@ def main():
     text_encoder_2.to(accelerator.device, dtype=weight_dtype)
     image_encoder.to(accelerator.device, dtype=weight_dtype)
     
-    # optimizer
+    # optimizer 
     params_to_opt = itertools.chain(ip_adapter.image_proj_model.parameters(),  ip_adapter.adapter_modules.parameters())
     optimizer = torch.optim.AdamW(params_to_opt, lr=args.learning_rate, weight_decay=args.weight_decay)
     
@@ -398,6 +363,105 @@ def main():
         num_workers=args.dataloader_num_workers,
     )
     
+    """
+
+    #######################
+    # Flux model Loading
+    #######################
+    revision = None
+    variant = None
+
+    tokenizer_one = CLIPTokenizer.from_pretrained(
+        args.pretrained_model_name_or_path,
+        subfolder="tokenizer",
+        revision=revision,
+    )
+    tokenizer_two = T5TokenizerFast.from_pretrained(
+        args.pretrained_model_name_or_path,
+        subfolder="tokenizer_2",
+        revision=revision,
+    )
+
+    text_encoder_one = CLIPTextModel.from_pretrained(
+        args.pretrained_model_name_or_path,
+        subfolder="text_encoder",
+        revision=revision,
+        variant=variant,
+    )
+
+    text_encoder_two = T5EncoderModel.from_pretrained(
+        args.pretrained_model_name_or_path,
+        subfolder="text_encoder_2",
+        revision=revision,
+        variant=variant,
+    )
+
+    vae = AutoencoderKL.from_pretrained(
+        args.pretrained_model_name_or_path,
+        subfolder="vae",
+        revision=revision,
+        variant=variant,
+    )
+
+    transformer = LibreFluxTransformer2DModel.from_pretrained(
+        args.pretrained_model_name_or_path,
+        subfolder="transformer",
+        revision=revision,
+        variant=variant,
+    )
+
+    image_encoder = CLIPVisionModelWithProjection.from_pretrained(
+        "openai/clip-vit-large-patch14"
+    )
+
+    noise_scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
+        args.pretrained_model_name_or_path,
+        subfolder="scheduler"
+    )
+
+    transformer.requires_grad_(False)
+    vae.requires_grad_(False)
+    text_encoder_one.requires_grad_(False)
+    text_encoder_two.requires_grad_(False)
+    image_encoder.requires_grad_(False)
+    # To be used for training, and saving and loading weights
+    image_proj_model = ImageProjModel( clip_dim=768, cross_attention_dim=3072, num_tokens=16)
+
+    weight_dtype = torch.float32
+    if accelerator.mixed_precision == "fp16":
+        weight_dtype = torch.float16
+    elif accelerator.mixed_precision == "bf16":
+        weight_dtype = torch.bfloat16
+    transformer.to(accelerator.device, dtype=weight_dtype)
+    vae.to(accelerator.device) # use fp32
+    text_encoder_one.to(accelerator.device, dtype=weight_dtype)
+    text_encoder_two.to(accelerator.device, dtype=weight_dtype)
+    image_encoder.to(accelerator.device, dtype=weight_dtype)
+    
+
+    if args.pretrained_ip_adapter_path is not None:
+        ip_adapter = LibreFluxIPAdapter(transformer,image_proj_model,checkpoint=args.pretrained_ip_adapter_path)
+    else:
+        ip_adapter = LibreFluxIPAdapter(transformer,image_proj_model)
+
+    # optimizer
+    optimizer = torch.optim.AdamW(ip_adapter.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
+    
+    # dataloader
+    train_dataset = MyDataset(args.data_json_file, tokenizer=tokenizer_one, tokenizer_2=tokenizer_two, size=args.resolution, image_root_path=args.data_root_path)
+    train_dataloader = torch.utils.data.DataLoader(
+        train_dataset,
+        shuffle=True,
+        collate_fn=collate_fn,
+        batch_size=args.train_batch_size,
+        num_workers=args.dataloader_num_workers,
+    )
+    
+    ###############
+    # END UPDATES
+    ###############
+
+
     # Prepare everything with our `accelerator`.
     ip_adapter, optimizer, train_dataloader = accelerator.prepare(ip_adapter, optimizer, train_dataloader)
     

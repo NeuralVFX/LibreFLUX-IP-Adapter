@@ -390,7 +390,7 @@ class FluxTransformerBlock(nn.Module):
         return encoder_hidden_states, hidden_states
 
 
-class FluxTransformer2DModel(
+class LibreFluxTransformer2DModel(
     ModelMixin, ConfigMixin, PeftAdapterMixin, FromOriginalModelMixin
 ):
     """
@@ -833,7 +833,7 @@ if __name__ == "__main__":
     img = _pack_latents(img, img.shape[0], 16, height, width)
 
     # Gotta go fast
-    transformer = FluxTransformer2DModel.from_config(
+    transformer = LibreFluxTransformer2DModel.from_config(
         {
             "attention_head_dim": 128,
             "guidance_embeds": True,
