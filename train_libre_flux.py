@@ -722,8 +722,11 @@ def main():
             global_step += 1
             
             if global_step % args.save_steps == 0:
-                save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
-                accelerator.save_state(save_path)
+                #save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
+                #accelerator.save_state(save_path)
+                unwrapped_model = accelerator.unwrap_model(ip_adapter)
+                save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}.pt")
+                unwrapped_model.save_pretrained(save_path)           
             
             begin = time.perf_counter()
                 
