@@ -28,6 +28,7 @@ from diffusers.training_utils import (
 
 from ip_adapter.flux_ip_adapter import *
 from ip_adapter.utils import is_torch2_available
+from ip_adapter.flux_custom_pipelines import *
 
 from models.transformer import *
 from models import encode_prompt_helper
@@ -123,6 +124,7 @@ class MyDataset(torch.utils.data.Dataset):
         
         return {
             "image": image,
+            "text": text,
             "text_input_ids": text_input_ids,
             "text_input_ids_2": text_input_ids_2,
             "clip_image": clip_image,
@@ -139,6 +141,8 @@ class MyDataset(torch.utils.data.Dataset):
 
 def collate_fn(data):
     images = torch.stack([example["image"] for example in data])
+    text = [example["text"] for example in data]
+
     text_input_ids = torch.cat([example["text_input_ids"] for example in data], dim=0)
     text_input_ids_2 = torch.cat([example["text_input_ids_2"] for example in data], dim=0)
     clip_images = torch.cat([example["clip_image"] for example in data], dim=0)
@@ -149,6 +153,7 @@ def collate_fn(data):
 
     return {
         "images": images,
+        "text": text,
         "text_input_ids": text_input_ids,
         "text_input_ids_2": text_input_ids_2,
         "clip_images": clip_images,
@@ -265,6 +270,38 @@ def parse_args():
             ' (default), `"wandb"` and `"comet_ml"`. Use `"all"` to report to all integrations.'
         ),
     )
+    parser.add_argument(
+        "--max_sequence_length",
+        type=int,
+        default=77,
+        help="Maximum sequence length to use with with the T5 text encoder",
+    )
+    parser.add_argument(
+        "--logit_mean",
+        type=float,
+        default=0.0,
+        help="mean to use when using the `'logit_normal'` weighting scheme.",
+    )
+    parser.add_argument(
+        "--weighting_scheme",
+        type=str,
+        # default="logit_normal",
+        default="none",
+        choices=["sigma_sqrt", "logit_normal", "mode", "cosmap", "none"],
+    )
+    parser.add_argument(
+        "--logit_std",
+        type=float,
+        default=1.0,
+        help="std to use when using the `'logit_normal'` weighting scheme.",
+    )
+    parser.add_argument(
+        "--mode_scale",
+        type=float,
+        default=1.29,
+        help="Scale of mode weighting scheme. Only effective when using the `'mode'` as the `weighting_scheme`.",
+    )   
+
     parser.add_argument("--local_rank", type=int, default=-1, help="For distributed training: local_rank")
     
     args = parser.parse_args()
@@ -524,7 +561,7 @@ def main():
                         text_ids,
                         prompt_mask,
                     ) = encode_prompt_helper.encode_prompt_standalone(
-                        prompt=batch['text_input_ids'], ### Is this wrong in this context?
+                        prompt=batch['text'], ### Is this wrong in this context?
                         tokenizer_one=tokenizer_one,
                         text_encoder_one=text_encoder_one,
                         tokenizer_two=tokenizer_two,
@@ -580,7 +617,7 @@ def main():
                     )
                     noisy_model_input = (1.0 - sigmas) * model_input + sigmas * noise
                     
-                    packed_noisy_model_input = FluxControlNetPipeline._pack_latents(
+                    packed_noisy_model_input = LibreFluxIpAdapterPipeline._pack_latents(
                             noisy_model_input,
                             batch_size=model_input.shape[0],
                             num_channels_latents=model_input.shape[1],

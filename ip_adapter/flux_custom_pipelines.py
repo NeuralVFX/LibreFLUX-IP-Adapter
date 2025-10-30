@@ -16,7 +16,7 @@
 #
 # Originally licensed under the Apache License, Version 2.0 (the "License");
 # Updated to "Affero GENERAL PUBLIC LICENSE Version 3, 19 November 2007" via extensive updates to attn_mask usage.
-__all__ = ['FluxTransformer2DModelWithMasking', 'CustomPipeline']
+#__all__ = ['FluxTransformer2DModelWithMasking', 'CustomPipeline']
 
 from typing import Any, Dict, List, Optional, Union
 
@@ -27,10 +27,8 @@ import torch.nn.functional as F
 from diffusers.configuration_utils import ConfigMixin, register_to_config
 from diffusers.loaders import FromOriginalModelMixin, PeftAdapterMixin
 from diffusers.models.attention import FeedForward
-from diffusers.models.attention_processor import (
-    Attention,
-    apply_rope,
-)
+from diffusers.models.attention_processor import Attention
+
 from diffusers.models.modeling_utils import ModelMixin
 from diffusers.models.normalization import (
     AdaLayerNormContinuous,
@@ -203,12 +201,12 @@ def retrieve_timesteps(
     return timesteps, num_inference_steps
 
 
-class CustomPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
+class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
     r"""
     The Flux pipeline for text-to-image generation.
     Reference: https://blackforestlabs.ai/announcing-black-forest-labs/
     Args:
-        transformer ([`FluxTransformer2DModelWithMasking`]):
+        transformer ([`LibreFluxTransformer2DModel`]):
             Conditional Transformer (MMDiT) architecture to denoise the encoded image latents.
         scheduler ([`FlowMatchEulerDiscreteScheduler`]):
             A scheduler to be used in combination with `transformer` to denoise the encoded image latents.
