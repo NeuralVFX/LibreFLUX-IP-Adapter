@@ -17,6 +17,7 @@ from transformers import CLIPImageProcessor
 from accelerate import Accelerator
 from accelerate.logging import get_logger
 from accelerate.utils import ProjectConfiguration
+from optimum.quanto import freeze, quantize, qfloat8, qint8, qint4, qint2, QTensor
 from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection, CLIPTextModelWithProjection
 from transformers import T5TokenizerFast, T5EncoderModel
@@ -281,6 +282,12 @@ def parse_args():
 
     parser.add_argument("--local_rank", type=int, default=-1, help="For distributed training: local_rank")
     
+    parser.add_argument(
+        "--quantize",
+        action="store_true",
+        help="Quantize everything except the adapter?",
+    )
+
     args = parser.parse_args()
     env_local_rank = int(os.environ.get("LOCAL_RANK", -1))
     if env_local_rank != -1 and env_local_rank != args.local_rank:
@@ -445,9 +452,9 @@ def main():
     text_encoder_one.requires_grad_(False)
     text_encoder_two.requires_grad_(False)
     image_encoder.requires_grad_(False)
-    # To be used for training, and saving and loading weights
-    image_proj_model = ImageProjModel( clip_dim=768, cross_attention_dim=3072, num_tokens=16)
 
+    image_proj_model = ImageProjModel( clip_dim=768, cross_attention_dim=3072, num_tokens=16)
+    # To be used for training, and saving and loading weights
     if args.pretrained_ip_adapter_path is not None:
         ip_adapter = LibreFluxIPAdapter(transformer,image_proj_model,checkpoint=args.pretrained_ip_adapter_path)
     else:
@@ -458,13 +465,44 @@ def main():
         weight_dtype = torch.float16
     elif accelerator.mixed_precision == "bf16":
         weight_dtype = torch.bfloat16
-    transformer.to(accelerator.device, dtype=weight_dtype)
-    vae.to(accelerator.device) # use fp32
-    text_encoder_one.to(accelerator.device, dtype=weight_dtype)
-    text_encoder_two.to(accelerator.device, dtype=weight_dtype)
-    image_encoder.to(accelerator.device, dtype=weight_dtype)
-    ip_adapter.to(accelerator.device, dtype=weight_dtype)
 
+    ip_adapter.to(dtype=weight_dtype)
+    transformer.to(dtype=weight_dtype)
+    vae.to(dtype=weight_dtype)
+    text_encoder_one.to(dtype=weight_dtype)
+    text_encoder_two.to(dtype=weight_dtype)
+    image_encoder.to(dtype=weight_dtype)
+
+    if args.quantize:
+            # https://github.com/bghira/SimpleTuner/blob/main/documentation/quickstart/FLUX.md
+            # "Alternatively, you can go ham on quantisation here and run them [text encoders] in
+            # int4 or int8 mode, because no one can stop you.""
+            # Saves about 5GB
+            print ("LEGACY QUANTIZE: Base models except transformer...")
+
+
+            # Transformer cant quantize, or backward pass in ip adapter breaks
+            #quantize(transformer, weights=qint8)
+            quantize(text_encoder_one, weights=qint8)
+            quantize(text_encoder_two, weights=qint8)
+            quantize(vae, weights=qint8)
+            #freeze(transformer)
+            freeze(text_encoder_one)
+            freeze(text_encoder_two)
+            freeze(vae)
+
+            print ("Finished quantization and moved models back to GPUs.")
+
+
+    transformer.to(accelerator.device)  # Only move device, no dtype
+    vae.to(accelerator.device)
+    text_encoder_one.to(accelerator.device)
+    text_encoder_two.to(accelerator.device)
+    ip_adapter.to(accelerator.device)
+    image_encoder.to(accelerator.device)  # Add this
+
+
+    
 
     # optimizer
     optimizer = torch.optim.AdamW(ip_adapter.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
@@ -552,7 +590,7 @@ def main():
                 with torch.no_grad():
 
                     ## MODIFICATION: Move input images to offload_device, encode, then move latents back to main_device.
-                    model_input  = vae.encode(pixel_values).latent_dist.sample()
+                    model_input  = vae.encode(pixel_values.to(dtype=weight_dtype)).latent_dist.sample()
                     
                     model_input = (
                         model_input - vae.config.shift_factor
