@@ -65,6 +65,8 @@ from transformers import (
     CLIPTokenizer,
     T5EncoderModel,
     T5TokenizerFast,
+    CLIPVisionModelWithProjection,
+    CLIPTextModelWithProjection,
 )
 
 from diffusers.image_processor import VaeImageProcessor
@@ -83,6 +85,7 @@ from diffusers.utils.torch_utils import randn_tensor
 from diffusers.pipelines.pipeline_utils import DiffusionPipeline
 
 from models.transformer import *
+from ip_adapter.flux_ip_adapter import *
 
 if is_torch_xla_available():
     import torch_xla.core.xla_model as xm
@@ -243,6 +246,8 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
         text_encoder_2: T5EncoderModel,
         tokenizer_2: T5TokenizerFast,
         transformer: LibreFluxTransformer2DModel,
+        image_encoder:  CLIPVisionModelWithProjection,
+        ip_adapter: LibreFluxIPAdapter,
     ):
         super().__init__()
 
@@ -254,6 +259,9 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
             tokenizer_2=tokenizer_2,
             transformer=transformer,
             scheduler=scheduler,
+            image_encoder=image_encoder,
+            ip_adapter=ip_adapter
+
         )
         self.vae_scale_factor = (
             2 ** (len(self.vae.config.block_out_channels))
@@ -626,7 +634,7 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
     def __call__(
         self,
         prompt: Union[str, List[str]] = None,
-        prompt_mask: Optional[Union[torch.FloatTensor, List[torch.FloatTensor]]] = None,
+        prompt_mask: Optional[Union[torch.C, List[torch.FloatTensor]]] = None,
         negative_mask: Optional[
             Union[torch.FloatTensor, List[torch.FloatTensor]]
         ] = None,
@@ -654,6 +662,7 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
         negative_pooled_prompt_embeds: Optional[torch.FloatTensor] = None,
         no_cfg_until_timestep: int = 0,
         do_batch_cfg: bool=True,
+        ip_adapter_image: torch.FloatTensor=None,
         device=torch.device('cuda'), # TODO let this work with non-cuda stuff? Might if you set this to None
     ):
         r"""
@@ -935,7 +944,33 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                     extra_transformer_args["attention_mask"] = prompt_mask_input.to(device=self.transformer.device)
 
                 # Forward pass through the transformer
-                noise_pred = self.transformer(
+
+                with torch.no_grad():
+                    image_embeds = self.image_encoder(ip_adapter_image).image_embeds
+            
+
+                #######################
+                # New Forward Pass
+                ########################
+                guidance = None
+
+                timesteps = (timesteps / 1000.0)
+                text_ids = [ t for t in text_ids ]
+
+                noise_pred = self.ip_adapter(
+                    image_embeds,
+                    latent_model_input.to(device=self.transformer.device),
+                    timestep=timesteps,
+                    guidance=guidance,
+                    pooled_projections=pooled_prompt_embeds,
+                    encoder_hidden_states=prompt_embeds,
+                    attention_mask=prompt_mask,
+                    txt_ids=text_ids[0],
+                    img_ids=latent_image_ids[0],
+                    return_dict=False,
+                )[0]
+
+                """noise_pred = self.transformer(
                     hidden_states=latent_model_input.to(device=self.transformer.device),
                     timestep=timestep / 1000,
                     guidance=guidance,
@@ -946,7 +981,7 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                     joint_attention_kwargs=self.joint_attention_kwargs,
                     return_dict=False,
                     **extra_transformer_args,
-                )[0]
+                )[0]"""
 
                 # Apply real CFG
                 if guidance_scale_real > 1.0 and i >= no_cfg_until_timestep:
@@ -956,7 +991,21 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                         noise_pred = noise_pred_uncond + guidance_scale_real * (noise_pred_cond - noise_pred_uncond)
                     else:
                         # Sequential CFG: Compute unconditional noise prediction separately
-                        noise_pred_uncond = self.transformer(
+                        
+                        noise_pred_uncond = self.ip_adapter(
+                        image_embeds,
+                        latents.to(device=self.transformer.device),
+                        timestep=timesteps,
+                        guidance=guidance,
+                        pooled_projections=negative_pooled_prompt_embeds.to(device=self.transformer.device),
+                        encoder_hidden_states=negative_prompt_embeds.to(device=self.transformer.device),
+                        attention_mask=negative_mask,
+                        txt_ids=negative_text_ids.to(device=self.transformer.device) if negative_text_ids is not None else None,
+                        img_ids=latent_image_ids[0],
+                        return_dict=False,
+                    )[0]
+
+                        """noise_pred_uncond = self.transformer(
                             hidden_states=latents.to(device=self.transformer.device),
                             timestep=timestep / 1000,
                             guidance=guidance,
@@ -966,7 +1015,7 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                             img_ids=latent_image_ids.to(device=self.transformer.device) if latent_image_ids is not None else None,
                             joint_attention_kwargs=self.joint_attention_kwargs,
                             return_dict=False,
-                        )[0]
+                        )[0]"""
 
                         # Combine conditional and unconditional predictions
                         noise_pred = noise_pred_uncond + guidance_scale_real * (noise_pred - noise_pred_uncond)
