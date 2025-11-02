@@ -40,10 +40,10 @@ class LibreFluxIPAdapter(nn.Module):
         for name, module in self.transformer.named_modules():
             if isinstance(module, Attention):
                 if name.startswith('transformer_block'):
-                    print (f"Using Transformer: {name}")
+                    #print (f"Using Transformer: {name}")
                     self.culled_transformer_blocks[name] = module
-                else:
-                    print (f"Ignoring Transformer: {name}")
+                #else:
+                    #print (f"Ignoring Transformer: {name}")
         # Apply the adapter to the culled blocks
         self.wrap_attention_blocks()
         
