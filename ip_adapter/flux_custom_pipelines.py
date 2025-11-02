@@ -931,17 +931,19 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                 # Expand timestep to match batch size
                 timestep = t.expand(latent_model_input.shape[0]).to(latents.dtype)
 
+                # We dont like guidance, we use CFG
                 # Handle guidance
-                if self.transformer.config.guidance_embeds:
-                    guidance = torch.tensor([guidance_scale], device=self.transformer.device)
-                    guidance = guidance.expand(latent_model_input.shape[0])
-                else:
-                    guidance = None
+                #if self.transformer.config.guidance_embeds:
+                #    guidance = torch.tensor([guidance_scale], device=self.transformer.device)
+                #    guidance = guidance.expand(latent_model_input.shape[0])
+                #else:
+                #    guidance = None
 
+                # We handle the attention as a param instead of this
                 # Prepare extra transformer arguments
-                extra_transformer_args = {}
-                if prompt_mask is not None:
-                    extra_transformer_args["attention_mask"] = prompt_mask_input.to(device=self.transformer.device)
+                #extra_transformer_args = {}
+                #if prompt_mask is not None:
+                #    extra_transformer_args["attention_mask"] = prompt_mask_input.to(device=self.transformer.device)
 
                 # Forward pass through the transformer
 
@@ -954,19 +956,19 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                 ########################
                 guidance = None
 
-                timesteps = (timesteps / 1000.0)
+                div_timesteps = (timesteps / 1000.0)
                 text_ids = [ t for t in text_ids ]
 
                 noise_pred = self.ip_adapter(
-                    image_embeds,
+                    image_embeds.to(device=self.transformer.device),
                     latent_model_input.to(device=self.transformer.device),
-                    timestep=timesteps,
+                    timestep=div_timesteps.to(device=self.transformer.device),
                     guidance=guidance,
-                    pooled_projections=pooled_prompt_embeds,
-                    encoder_hidden_states=prompt_embeds,
-                    attention_mask=prompt_mask,
-                    txt_ids=text_ids[0],
-                    img_ids=latent_image_ids[0],
+                    pooled_projections=pooled_prompt_embeds_input.to(device=self.transformer.device),
+                    encoder_hidden_states=prompt_embeds_input.to(device=self.transformer.device),
+                    attention_mask=prompt_mask_input.to(device=self.transformer.device),
+                    txt_ids=text_ids_input[0],
+                    img_ids=latent_image_ids_input[0].to(device=self.transformer.device),
                     return_dict=False,
                 )[0]
 
@@ -995,13 +997,13 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                         noise_pred_uncond = self.ip_adapter(
                         image_embeds,
                         latents.to(device=self.transformer.device),
-                        timestep=timesteps,
+                        timestep=div_timesteps,
                         guidance=guidance,
                         pooled_projections=negative_pooled_prompt_embeds.to(device=self.transformer.device),
                         encoder_hidden_states=negative_prompt_embeds.to(device=self.transformer.device),
                         attention_mask=negative_mask,
                         txt_ids=negative_text_ids.to(device=self.transformer.device) if negative_text_ids is not None else None,
-                        img_ids=latent_image_ids[0],
+                        img_ids=latent_image_ids[0].to(device=self.transformer.device),
                         return_dict=False,
                     )[0]
 
