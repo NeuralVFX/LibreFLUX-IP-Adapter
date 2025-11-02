@@ -137,7 +137,6 @@ class MyDataset(torch.utils.data.Dataset):
         crop_coords_top_left = torch.tensor([top, left]) 
 
         clip_image = self.clip_image_processor(images=raw_image, return_tensors="pt").pixel_values
-        ## Cross check why cropped iamge isnt being used
 
         # drop
         drop_image_embed = 0
@@ -188,6 +187,7 @@ def collate_fn(data):
         "crop_coords_top_left": crop_coords_top_left,
         "target_size": target_size,
     }
+
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Simple example of a training script.")
@@ -349,7 +349,6 @@ def parse_args():
         default=1.29,
         help="Scale of mode weighting scheme. Only effective when using the `'mode'` as the `weighting_scheme`.",
     )   
-
     parser.add_argument("--local_rank", type=int, default=-1, help="For distributed training: local_rank")
     
     parser.add_argument(
@@ -381,90 +380,10 @@ def main():
     if accelerator.is_main_process:
         if args.output_dir is not None:
             os.makedirs(args.output_dir, exist_ok=True)
-    """ COMMENTING THIS OLD STUFF OUT - TO USE AS REF FOR NEW CODE
-    # Load scheduler, tokenizer and models.
-    noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
-    tokenizer = CLIPTokenizer.from_pretrained(args.pretrained_model_name_or_path, subfolder="tokenizer")
-    text_encoder = CLIPTextModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="text_encoder")
-    tokenizer_2 = CLIPTokenizer.from_pretrained(args.pretrained_model_name_or_path, subfolder="tokenizer_2")
-    text_encoder_2 = CLIPTextModelWithProjection.from_pretrained(args.pretrained_model_name_or_path, subfolder="text_encoder_2")
-    vae = AutoencoderKL.from_pretrained(args.pretrained_model_name_or_path, subfolder="vae")
-    unet = UNet2DConditionModel.from_pretrained(args.pretrained_model_name_or_path, subfolder="unet")
-    image_encoder = CLIPVisionModelWithProjection.from_pretrained(args.image_encoder_path)
-
-    # freeze parameters of models to save more memory
-    unet.requires_grad_(False)
-    vae.requires_grad_(False)
-    text_encoder.requires_grad_(False)
-    text_encoder_2.requires_grad_(False)
-    image_encoder.requires_grad_(False)
-    
-    #ip-adapter
-    num_tokens = 4
-    image_proj_model = ImageProjModel(
-        cross_attention_dim=unet.config.cross_attention_dim,
-        clip_embeddings_dim=image_encoder.config.projection_dim,
-        clip_extra_context_tokens=num_tokens,
-    )
-    # init adapter modules
-    attn_procs = {}
-    unet_sd = unet.state_dict()
-    for name in unet.attn_processors.keys():
-        cross_attention_dim = None if name.endswith("attn1.processor") else unet.config.cross_attention_dim
-        if name.startswith("mid_block"):
-            hidden_size = unet.config.block_out_channels[-1]
-        elif name.startswith("up_blocks"):
-            block_id = int(name[len("up_blocks.")])
-            hidden_size = list(reversed(unet.config.block_out_channels))[block_id]
-        elif name.startswith("down_blocks"):
-            block_id = int(name[len("down_blocks.")])
-            hidden_size = unet.config.block_out_channels[block_id]
-        if cross_attention_dim is None:
-            attn_procs[name] = AttnProcessor()
-        else:
-            layer_name = name.split(".processor")[0]
-            weights = {
-                "to_k_ip.weight": unet_sd[layer_name + ".to_k.weight"],
-                "to_v_ip.weight": unet_sd[layer_name + ".to_v.weight"],
-            }
-            attn_procs[name] = IPAttnProcessor(hidden_size=hidden_size, cross_attention_dim=cross_attention_dim, num_tokens=num_tokens)
-            attn_procs[name].load_state_dict(weights)
-    unet.set_attn_processor(attn_procs)
-    adapter_modules = torch.nn.ModuleList(unet.attn_processors.values())
-    
-    ip_adapter = IPAdapter(unet, image_proj_model, adapter_modules, args.pretrained_ip_adapter_path)
-
-
-    weight_dtype = torch.float32
-    if accelerator.mixed_precision == "fp16":
-        weight_dtype = torch.float16
-    elif accelerator.mixed_precision == "bf16":
-        weight_dtype = torch.bfloat16
-    #unet.to(accelerator.device, dtype=weight_dtype)
-    vae.to(accelerator.device) # use fp32
-    text_encoder.to(accelerator.device, dtype=weight_dtype)
-    text_encoder_2.to(accelerator.device, dtype=weight_dtype)
-    image_encoder.to(accelerator.device, dtype=weight_dtype)
-    
-    # optimizer 
-    params_to_opt = itertools.chain(ip_adapter.image_proj_model.parameters(),  ip_adapter.adapter_modules.parameters())
-    optimizer = torch.optim.AdamW(params_to_opt, lr=args.learning_rate, weight_decay=args.weight_decay)
-    
-    # dataloader
-    train_dataset = MyDataset(args.data_json_file, tokenizer=tokenizer, tokenizer_2=tokenizer_2, size=args.resolution, image_root_path=args.data_root_path)
-    train_dataloader = torch.utils.data.DataLoader(
-        train_dataset,
-        shuffle=True,
-        collate_fn=collate_fn,
-        batch_size=args.train_batch_size,
-        num_workers=args.dataloader_num_workers,
-    )
-    
-    """
-
-    #######################
-    # Flux model Loading
-    #######################
+  
+    #################################
+    # Pipeline Loading/Assembly
+    #################################
     revision = None
     variant = None
 
@@ -557,6 +476,7 @@ def main():
     elif accelerator.mixed_precision == "bf16":
         weight_dtype = torch.bfloat16
 
+    # Set dtype
     ip_adapter.to(dtype=weight_dtype)
     transformer.to(dtype=weight_dtype)
     vae.to(dtype=weight_dtype)
@@ -564,12 +484,13 @@ def main():
     text_encoder_two.to(dtype=weight_dtype)
     image_encoder.to(dtype=weight_dtype)
 
+    # Quantize to save ram
     if args.quantize:
             # https://github.com/bghira/SimpleTuner/blob/main/documentation/quickstart/FLUX.md
             # "Alternatively, you can go ham on quantisation here and run them [text encoders] in
             # int4 or int8 mode, because no one can stop you.""
             # Saves about 5GB
-            print ("LEGACY QUANTIZE: Base models except transformer...")
+            print ("QUANTIZE: Base models except transformer...")
 
 
             # Transformer cant quantize, or backward pass in ip adapter breaks
@@ -582,23 +503,25 @@ def main():
             freeze(text_encoder_two)
             freeze(vae)
 
-            print ("Finished quantization and moved models back to GPUs.")
+            print ("Finished quantization")
 
-
-    transformer.to(accelerator.device)  # Only move device, no dtype
+    # Move to out device
+    transformer.to(accelerator.device) 
     vae.to(accelerator.device)
     text_encoder_one.to(accelerator.device)
     text_encoder_two.to(accelerator.device)
     ip_adapter.to(accelerator.device)
-    image_encoder.to(accelerator.device)  # Add this
+    image_encoder.to(accelerator.device)  
 
 
-    
+    #################################
+    # Training Prep
+    #################################
 
     # optimizer
     optimizer = torch.optim.AdamW(ip_adapter.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
     
-    # dataloader
+    # dataloaders
     train_dataset = MyDataset(args.data_json_file, size=args.resolution, image_root_path=args.data_root_path)
     train_dataloader = torch.utils.data.DataLoader(
         train_dataset,
@@ -627,57 +550,33 @@ def main():
         while len(sigma.shape) < n_dim:
             sigma = sigma.unsqueeze(-1)
         return sigma
-    ###############
-    # END UPDATES
-    ###############
-
 
     # Prepare everything with our `accelerator`.
     ip_adapter, optimizer, train_dataloader = accelerator.prepare(ip_adapter, optimizer, train_dataloader)
     
+
+    #################################
+    # Training Loop
+    #################################
+
     global_step = 0
     for epoch in range(0, args.num_train_epochs):
         begin = time.perf_counter()
         for step, batch in enumerate(train_dataloader):
             load_data_time = time.perf_counter() - begin
             with accelerator.accumulate(ip_adapter):
-                # Convert images to latent space
-                """ COMMENTING THIS OLD STUFF OUT - TO USE AS REF FOR NEW CODE                # Sample noise that we'll add to the latents
-
-                with torch.no_grad():
-                    # vae of sdxl should use fp32
-                    latents = vae.encode(batch["images"].to(accelerator.device, dtype=torch.float32)).latent_dist.sample()
-                    latents = latents * vae.config.scaling_factor
-                    latents = latents.to(accelerator.device, dtype=weight_dtype)
-                
-                noise = torch.randn_like(latents)
-                if args.noise_offset:
-                    # https://www.crosslabs.org//blog/diffusion-with-offset-noise
-                    noise += args.noise_offset * torch.randn((latents.shape[0], latents.shape[1], 1, 1)).to(accelerator.device, dtype=weight_dtype)
-
-                bsz = latents.shape[0]
-                # Sample a random timestep for each image
-                timesteps = torch.randint(0, noise_scheduler.num_train_timesteps, (bsz,), device=latents.device)
-                timesteps = timesteps.long()
-                  
-                # Add noise to the latents according to the noise magnitude at each timestep
-                # (this is the forward diffusion process)
-                noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
-                """
-                ############################
-                # New Flux Noise Injection Code
-                ############################
 
                 pixel_values = batch["images"]
+
                 with torch.no_grad():
-                    # Use the new standalone function from your helper file
+
                     (
                         prompt_embeds,
                         pooled_prompt_embeds,
                         text_ids,
                         prompt_mask,
                     ) = encode_prompt_helper.encode_prompt_standalone(
-                        prompt=batch['text'], ### Is this wrong in this context?
+                        prompt=batch['text'],
                         tokenizer_one=tokenizer_one,
                         text_encoder_one=text_encoder_one,
                         tokenizer_two=tokenizer_two,
@@ -686,10 +585,10 @@ def main():
                         device=accelerator.device,
                     )
                 
-                # 1. Convert the actual noised image to latent space.
-                with torch.no_grad():
+                    #################################
+                    # Prepare Noisy Image
+                    #################################   
 
-                    ## MODIFICATION: Move input images to offload_device, encode, then move latents back to main_device.
                     model_input  = vae.encode(pixel_values.to(dtype=weight_dtype)).latent_dist.sample()
                     
                     model_input = (
@@ -699,19 +598,18 @@ def main():
                     vae_scale_factor = 2 ** (len(vae.config.block_out_channels))
 
 
-                    # Edit 5 - add division by 2 here UNDO
                     latent_image_ids = LibreFluxIpAdapterPipeline._prepare_latent_image_ids(
                         model_input.shape[0],
-                        model_input.shape[2],#//2,
-                        model_input.shape[3],#//2,
+                        model_input.shape[2],
+                        model_input.shape[3],
                         accelerator.device,
                         weight_dtype,
                     )
-                    # 2. Sample noise that we'll add to the latents
+                    # Sample noise that we'll add to the latents
                     noise = torch.randn_like(model_input)
                     bsz = model_input.shape[0]
 
-                    # 3. Sample a random timestep for each image
+                    # Sample a random timestep for each image
                     # for weighting schemes where we sample timesteps non-uniformly
                     u = compute_density_for_timestep_sampling(
                         weighting_scheme=args.weighting_scheme,
@@ -741,10 +639,10 @@ def main():
                             height=model_input.shape[2],
                             width=model_input.shape[3],
                         )
-                    
-                #########################
-                # End New Noise Injection
-                ###########################
+
+                #################################
+                # Clip Encode IP Adapter Image
+                #################################    
 
                 with torch.no_grad():
                     image_embeds = image_encoder(batch["clip_images"].to(accelerator.device, dtype=weight_dtype)).image_embeds
@@ -756,53 +654,13 @@ def main():
                         image_embeds_.append(image_embed)
                 image_embeds = torch.stack(image_embeds_)
             
-                """ COMMENTING THIS OLD STUFF OUT - TO USE AS REF FOR NEW CODE                # Sample noise that we'll add to the latents
-
-                with torch.no_grad():
-                    encoder_output = text_encoder(batch['text_input_ids'].to(accelerator.device), output_hidden_states=True)
-                    text_embeds = encoder_output.hidden_states[-2]
-                    encoder_output_2 = text_encoder_2(batch['text_input_ids_2'].to(accelerator.device), output_hidden_states=True)
-                    pooled_text_embeds = encoder_output_2[0]
-                    text_embeds_2 = encoder_output_2.hidden_states[-2]
-                    text_embeds = torch.concat([text_embeds, text_embeds_2], dim=-1) # concat
-                        
-                # add cond
-                add_time_ids = [
-                    batch["original_size"].to(accelerator.device),
-                    batch["crop_coords_top_left"].to(accelerator.device),
-                    batch["target_size"].to(accelerator.device),
-                ]
-                add_time_ids = torch.cat(add_time_ids, dim=1).to(accelerator.device, dtype=weight_dtype)
-                unet_added_cond_kwargs = {"text_embeds": pooled_text_embeds, "time_ids": add_time_ids}
-                
-                noise_pred = ip_adapter(noisy_latents, timesteps, text_embeds, unet_added_cond_kwargs, image_embeds)
-                
-                loss = F.mse_loss(noise_pred.float(), noise.float(), reduction="mean")
-            
-                # Gather the losses across all processes for logging (if we use distributed training).
-                avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean().item()
-                """
-
-                #######################
-                # New Forward Pass
-                ########################
+                #################################
+                # Forward Pass Through IP Adapter
+                #################################
                 guidance = None
 
                 timesteps = (timesteps / 1000.0)
                 text_ids = [ t for t in text_ids ]
-
-                """model_pred = transformer(
-                    hidden_states=packed_noisy_model_input,
-                    timestep=timesteps,
-                    guidance=guidance,
-                    pooled_projections=pooled_prompt_embeds,
-                    encoder_hidden_states=prompt_embeds,
-                    attention_mask=prompt_mask,
-                    txt_ids=text_ids[0],
-                    img_ids=latent_image_ids[0],
-                    return_dict=False,
-                )[0]"""
-
 
                 model_pred = ip_adapter(
                     image_embeds,
@@ -817,7 +675,6 @@ def main():
                     return_dict=False,
                 )[0]
 
-                # Edit 4 , remove divide by two on height and wiedth  # UNDON
                 model_pred = LibreFluxIpAdapterPipeline._unpack_latents(
                     model_pred,
                     height=int(model_input.shape[2] * vae_scale_factor )//2,
@@ -843,9 +700,6 @@ def main():
                 )
                 loss = loss.mean()
 
-                #########################
-                # End Forward Pass
-                #########################
 
                 # Backpropagate
                 accelerator.backward(loss)
@@ -857,6 +711,9 @@ def main():
                     print("Epoch {}, step {}, data_time: {}, time: {}, step_loss: {}".format(
                         epoch, step, load_data_time, time.perf_counter() - begin, avg_loss))
             
+            ###############################################
+            # Validation and Saving ( not multi gpu compatible )
+            ###############################################    
             global_step += 1
             
             if global_step % args.save_steps == 0:

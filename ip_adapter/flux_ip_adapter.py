@@ -8,6 +8,7 @@ from diffusers.models.attention_processor import (
 
 from ip_adapter.flux_attention_processor import *
 
+
 class ImageProjModel(nn.Module):
     def __init__(self, clip_dim=768, cross_attention_dim=3072, num_tokens=16):
         super().__init__()

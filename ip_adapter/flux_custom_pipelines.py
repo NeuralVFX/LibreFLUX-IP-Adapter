@@ -876,17 +876,7 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
         else:
             guidance = None
 
-        # if use_prompt_mask and prompt_mask is not None and not zero_using_prompt_mask:
-        #     print('Using masking')
-        # elif use_prompt_mask and prompt_mask is not None and zero_using_prompt_mask:
-        #     print('Using zeroed embeds')
-        # else:
-        #     print('Not using masking')
-
-        # if self._guidance_scale_real > 1.0:
-        #     print('Using classifier free guidance', self._guidance_scale_real)
-
-        # 6. Denoising loop
+        # Denoising loop
         with self.progress_bar(total=num_inference_steps) as progress_bar:
             for i, t in enumerate(timesteps):
                 if self.interrupt:
@@ -915,22 +905,7 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                         },
                     )
 
-                # We dont like guidance, we use CFG
-                # Handle guidance
-                #if self.transformer.config.guidance_embeds:
-                #    guidance = torch.tensor([guidance_scale], device=self.transformer.device)
-                #    guidance = guidance.expand(latent_model_input.shape[0])
-                #else:
-                #    guidance = None
-
-                # We handle the attention as a param instead of this
-                # Prepare extra transformer arguments
-                #extra_transformer_args = {}
-                #if prompt_mask is not None:
-                #    extra_transformer_args["attention_mask"] = prompt_mask_input.to(device=self.transformer.device)
-
                 # Forward pass through the transformer
-
                 with torch.no_grad():
                     clip_image = self.clip_image_processor(images=ip_adapter_image,
                                                            return_tensors="pt").pixel_values
@@ -966,9 +941,6 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                 # Expand timestep to match batch size
                 timestep = t.expand(latent_model_input.shape[0]).to(latents.dtype)
 
-                #######################
-                # New Forward Pass
-                ########################
                 guidance = None
 
                 div_timestep = (timestep / 1000.0)
@@ -987,19 +959,6 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                     img_ids=latent_image_ids_input[0].to(device=self.transformer.device),
                     return_dict=False,
                 )[0]
-
-                """noise_pred = self.transformer(
-                    hidden_states=latent_model_input.to(device=self.transformer.device),
-                    timestep=timestep / 1000,
-                    guidance=guidance,
-                    pooled_projections=pooled_prompt_embeds_input.to(device=self.transformer.device),
-                    encoder_hidden_states=prompt_embeds_input.to(device=self.transformer.device),
-                    txt_ids=text_ids_input.to(device=self.transformer.device) if text_ids is not None else None,
-                    img_ids=latent_image_ids_input.to(device=self.transformer.device) if latent_image_ids is not None else None,
-                    joint_attention_kwargs=self.joint_attention_kwargs,
-                    return_dict=False,
-                    **extra_transformer_args,
-                )[0]"""
 
                 # Apply real CFG
                 if guidance_scale_real > 1.0 and i >= no_cfg_until_timestep:
@@ -1023,18 +982,6 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                         img_ids=latent_image_ids[0].to(device=self.transformer.device),
                         return_dict=False,
                     )[0]
-
-                        """noise_pred_uncond = self.transformer(
-                            hidden_states=latents.to(device=self.transformer.device),
-                            timestep=timestep / 1000,
-                            guidance=guidance,
-                            pooled_projections=negative_pooled_prompt_embeds.to(device=self.transformer.device),
-                            encoder_hidden_states=negative_prompt_embeds.to(device=self.transformer.device),
-                            txt_ids=negative_text_ids.to(device=self.transformer.device) if negative_text_ids is not None else None,
-                            img_ids=latent_image_ids.to(device=self.transformer.device) if latent_image_ids is not None else None,
-                            joint_attention_kwargs=self.joint_attention_kwargs,
-                            return_dict=False,
-                        )[0]"""
 
                         # Combine conditional and unconditional predictions
                         noise_pred = noise_pred_uncond + guidance_scale_real * (noise_pred - noise_pred_uncond)
