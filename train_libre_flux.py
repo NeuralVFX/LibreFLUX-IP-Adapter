@@ -40,6 +40,49 @@ from models import encode_prompt_helper
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
+import matplotlib.pyplot as plt
+
+def gen_validation_images(pipe, test_dataloader,save_dir, iter):
+    image_list = []
+
+
+    pipe.ip_adapter.eval() 
+
+    for step, batch in enumerate(test_dataloader):
+        pixel_values = batch["pil_images"][0]
+        
+        images = pipe(
+            prompt=batch['text'][0],
+            negative_prompt="blurry",
+            return_dict=False,
+            ip_adapter_image=pixel_values, 
+        )
+        
+        image_list.append(images[0][0])
+    
+    # Create subplot grid
+    n_images = len(image_list)
+    cols = min(4, n_images)
+    rows = (n_images + cols - 1) // cols
+    
+    fig, axes = plt.subplots(rows, cols, figsize=(cols*4, rows*4))
+    axes = axes.flatten() if n_images > 1 else [axes]
+    
+    for idx, img in enumerate(image_list):
+        axes[idx].imshow(img)
+        axes[idx].axis('off')
+    
+    # Hide empty subplots
+    for idx in range(n_images, len(axes)):
+        axes[idx].axis('off')
+    
+    plt.tight_layout()
+    plt.savefig(f"{save_dir}/val.{iter:05d}.png")
+    plt.close()
+    
+    pipe.ip_adapter.train()
+
+
 # Dataset
 class MyDataset(torch.utils.data.Dataset):
 
@@ -93,7 +136,8 @@ class MyDataset(torch.utils.data.Dataset):
         crop_coords_top_left = torch.tensor([top, left]) 
 
         clip_image = self.clip_image_processor(images=raw_image, return_tensors="pt").pixel_values
-        
+        ## Cross check why cropped iamge isnt being used
+
         # drop
         drop_image_embed = 0
         rand_num = random.random()
@@ -108,6 +152,7 @@ class MyDataset(torch.utils.data.Dataset):
         
         return {
             "image": image,
+            "pil_image":raw_image,
             "text": text,
             "clip_image": clip_image,
             "drop_image_embed": drop_image_embed,
@@ -124,6 +169,7 @@ class MyDataset(torch.utils.data.Dataset):
 def collate_fn(data):
     images = torch.stack([example["image"] for example in data])
     text = [example["text"] for example in data]
+    pil_images = [example["pil_image"] for example in data]
 
     clip_images = torch.cat([example["clip_image"] for example in data], dim=0)
     drop_image_embeds = [example["drop_image_embed"] for example in data]
@@ -133,6 +179,7 @@ def collate_fn(data):
 
     return {
         "images": images,
+        "pil_images":pil_images,
         "text": text,
         "clip_images": clip_images,
         "drop_image_embeds": drop_image_embeds,
@@ -168,7 +215,21 @@ def parse_args():
         type=str,
         default="",
         required=True,
-        help="Training data root path",
+        help="Test data root path",
+    )
+    parser.add_argument(
+        "--val_data_json_file",
+        type=str,
+        default=None,
+        required=True,
+        help="Validation data",
+    )
+    parser.add_argument(
+        "--val_data_root_path",
+        type=str,
+        default="",
+        required=True,
+        help="Validation data root path",
     )
     parser.add_argument(
         "--image_encoder_path",
@@ -226,6 +287,14 @@ def parse_args():
         default=2000,
         help=(
             "Save a checkpoint of the training state every X updates"
+        ),
+    )
+    parser.add_argument(
+        "--val_steps",
+        type=int,
+        default=2000,
+        help=(
+            "Generate a validation image every X updates"
         ),
     )
     parser.add_argument(
@@ -438,7 +507,7 @@ def main():
     )
 
     image_encoder = CLIPVisionModelWithProjection.from_pretrained(
-        "openai/clip-vit-large-patch14"
+        args.image_encoder_path
     )
 
     noise_scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
@@ -453,12 +522,33 @@ def main():
     text_encoder_two.requires_grad_(False)
     image_encoder.requires_grad_(False)
 
+    transformer.eval()
+    vae.eval()
+    text_encoder_one.eval()
+    text_encoder_two.eval()
+    image_encoder.eval() 
+
     image_proj_model = ImageProjModel( clip_dim=768, cross_attention_dim=3072, num_tokens=16)
     # To be used for training, and saving and loading weights
     if args.pretrained_ip_adapter_path is not None:
         ip_adapter = LibreFluxIPAdapter(transformer,image_proj_model,checkpoint=args.pretrained_ip_adapter_path)
     else:
         ip_adapter = LibreFluxIPAdapter(transformer,image_proj_model)
+
+    ip_adapter.train()
+
+    pipeline = LibreFluxIpAdapterPipeline(
+            scheduler=noise_scheduler,
+            vae=vae,
+            text_encoder=text_encoder_one,
+            tokenizer=tokenizer_one,
+            text_encoder_2 =text_encoder_two,
+            tokenizer_2=tokenizer_two,
+            transformer=transformer,
+            image_encoder=image_encoder,
+            ip_adapter=ip_adapter,
+    )
+    
 
     weight_dtype = torch.float32
     if accelerator.mixed_precision == "fp16":
@@ -517,6 +607,15 @@ def main():
         num_workers=args.dataloader_num_workers,
     )
     
+    val_dataset = MyDataset(args.val_data_json_file, size=args.resolution, image_root_path=args.val_data_root_path)
+    val_dataloader = torch.utils.data.DataLoader(
+        val_dataset,
+        shuffle=True,
+        collate_fn=collate_fn,
+        batch_size=1,
+        num_workers=args.dataloader_num_workers,
+    )
+
     def get_sigmas(timesteps, n_dim=4, dtype=torch.float32):
         sigmas = noise_scheduler_copy.sigmas.to(device=accelerator.device, dtype=dtype)
         schedule_timesteps = noise_scheduler_copy.timesteps.to(accelerator.device)
@@ -764,8 +863,12 @@ def main():
                 #accelerator.save_state(save_path)
                 unwrapped_model = accelerator.unwrap_model(ip_adapter)
                 save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}.pt")
-                unwrapped_model.save_pretrained(save_path)           
-            
+                unwrapped_model.save_pretrained(save_path)
+                           
+            if global_step % args.val_steps == 0:
+              with torch.no_grad():
+                gen_validation_images(pipeline,val_dataloader,args.output_dir, global_step)
+
             begin = time.perf_counter()
                 
 if __name__ == "__main__":

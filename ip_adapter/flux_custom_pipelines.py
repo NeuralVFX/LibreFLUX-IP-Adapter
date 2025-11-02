@@ -1073,6 +1073,8 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
             latents = (
                 latents / self.vae.config.scaling_factor
             ) + self.vae.config.shift_factor
+            
+            latents = latents.to(dtype=self.vae.dtype)
 
             image = self.vae.decode(
                 latents,

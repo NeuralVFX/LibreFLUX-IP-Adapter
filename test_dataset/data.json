@@ -1,14 +1,14 @@
 [
   {
-    "image_file": "image2.jpg",
-    "text": "A public bus"
+    "image_file": "david.jpg",
+    "text": "a young mans face"
   },
   {
-    "image_file": "image1.jpg",
-    "text": "Two men in suites, one pointing his hand"
+    "image_file": "mona.jpg",
+    "text": "a girls portrait"
   },
   {
-    "image_file": "image3.jpg",
-    "text": "A google map of maputo"
+    "image_file": "picasso.jpg",
+    "text": "two girls hugging"
   }
 ]
