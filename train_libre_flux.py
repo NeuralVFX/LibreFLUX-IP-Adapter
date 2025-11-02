@@ -79,7 +79,7 @@ def gen_validation_images(pipe, test_dataloader, save_dir, iter):
         axes[1, idx].set_title('Generated', fontsize=10)
     
     plt.tight_layout()
-    plt.savefig(f"{save_dir}/val.{iter:05d}.png")
+    plt.savefig(f"{save_dir}/val.{iter:07d}.png")
     plt.close()
     
     pipe.ip_adapter.train()
@@ -720,7 +720,7 @@ def main():
                 #save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
                 #accelerator.save_state(save_path)
                 unwrapped_model = accelerator.unwrap_model(ip_adapter)
-                save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}.pt")
+                save_path = os.path.join(args.output_dir, f"checkpoint-{global_step:07d}.pt")
                 unwrapped_model.save_pretrained(save_path)
                            
             if global_step % args.val_steps == 0:
