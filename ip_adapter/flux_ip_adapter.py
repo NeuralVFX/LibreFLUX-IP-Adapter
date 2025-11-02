@@ -85,7 +85,7 @@ class LibreFluxIPAdapter(nn.Module):
         all_params = chain(*adapter_param_list,self.image_proj_model.parameters())
         return all_params
 
-    def forward(self, ref_image, *args, **kwargs):
+    def forward(self, ref_image, *args, layer_scale= torch.Tensor([1.0]), **kwargs):
         """ Run projection and run forward """
 
         ip_encoder_hidden_states = self.image_proj_model(ref_image)
@@ -93,7 +93,6 @@ class LibreFluxIPAdapter(nn.Module):
         # Add ip hidden states to kwargs
         if 'joint_attention_kwargs' not in kwargs:
             kwargs['joint_attention_kwargs'] = {}
-        layer_scale = torch.Tensor([1.0])
         layer_scale = layer_scale.to(dtype=ip_encoder_hidden_states.dtype,
         device=ip_encoder_hidden_states.device)   
 
