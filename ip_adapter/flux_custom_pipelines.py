@@ -668,6 +668,7 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
         no_cfg_until_timestep: int = 0,
         do_batch_cfg: bool=True,
         ip_adapter_image: Image=None,
+        ip_adapter_scale: float=1.0,
         device=torch.device('cuda'), # TODO let this work with non-cuda stuff? Might if you set this to None
     ):
         r"""
@@ -937,7 +938,7 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                                                dtype=self.image_encoder.dtype)
                     image_embeds = self.image_encoder(clip_image).image_embeds
                     image_embeds_input = image_embeds
-                    layer_scale = torch.Tensor([1.0])
+                    layer_scale = torch.Tensor([ip_adapter_scale])
                     layer_scale_input = layer_scale
                     neg_layer_scale = torch.Tensor([0.0])
 
