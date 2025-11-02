@@ -956,13 +956,13 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                 ########################
                 guidance = None
 
-                div_timesteps = (timesteps / 1000.0)
+                div_timestep = (timestep / 1000.0)
                 text_ids = [ t for t in text_ids ]
 
                 noise_pred = self.ip_adapter(
                     image_embeds.to(device=self.transformer.device),
                     latent_model_input.to(device=self.transformer.device),
-                    timestep=div_timesteps.to(device=self.transformer.device),
+                    timestep=div_timestep.to(device=self.transformer.device),
                     guidance=guidance,
                     pooled_projections=pooled_prompt_embeds_input.to(device=self.transformer.device),
                     encoder_hidden_states=prompt_embeds_input.to(device=self.transformer.device),
@@ -997,7 +997,7 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                         noise_pred_uncond = self.ip_adapter(
                         image_embeds,
                         latents.to(device=self.transformer.device),
-                        timestep=div_timesteps,
+                        timestep=div_timestep,
                         guidance=guidance,
                         pooled_projections=negative_pooled_prompt_embeds.to(device=self.transformer.device),
                         encoder_hidden_states=negative_prompt_embeds.to(device=self.transformer.device),
