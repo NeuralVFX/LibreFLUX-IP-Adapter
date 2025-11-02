@@ -135,6 +135,10 @@ class LibreFluxIPAdapter(nn.Module):
 
         print(f"Successfully loaded weights from checkpoint {ckpt_path}")
 
+    @property
+    def dtype(self):
+        return next(self.image_proj_model.parameters()).dtype
+
 ### Examples
 # Test
 #image_proj_model = ImageProjModel(clip_dim=768, cross_attention_dim=3072, num_tokens=16)

@@ -634,7 +634,7 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
     def __call__(
         self,
         prompt: Union[str, List[str]] = None,
-        prompt_mask: Optional[Union[torch.C, List[torch.FloatTensor]]] = None,
+        prompt_mask: Optional[Union[torch.FloatTensor, List[torch.FloatTensor]]] = None,
         negative_mask: Optional[
             Union[torch.FloatTensor, List[torch.FloatTensor]]
         ] = None,
