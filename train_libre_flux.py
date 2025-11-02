@@ -41,47 +41,48 @@ from models import encode_prompt_helper
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import matplotlib.pyplot as plt
-
-def gen_validation_images(pipe, test_dataloader,save_dir, iter):
+def gen_validation_images(pipe, test_dataloader, save_dir, iter):
     image_list = []
-
+    input_image_list = []
 
     pipe.ip_adapter.eval() 
 
     for step, batch in enumerate(test_dataloader):
         pixel_values = batch["pil_images"][0]
+        input_image_list.append(pixel_values)  # Store input image
         
         images = pipe(
             prompt=batch['text'][0],
             negative_prompt="blurry",
             return_dict=False,
             ip_adapter_image=pixel_values, 
+            generator = torch.Generator(device="cuda").manual_seed(42)
         )
         
         image_list.append(images[0][0])
     
-    # Create subplot grid
+    # Create subplot grid: 2 rows (input + output)
     n_images = len(image_list)
-    cols = min(4, n_images)
-    rows = (n_images + cols - 1) // cols
+    cols = n_images
     
-    fig, axes = plt.subplots(rows, cols, figsize=(cols*4, rows*4))
-    axes = axes.flatten() if n_images > 1 else [axes]
+    fig, axes = plt.subplots(2, cols, figsize=(cols*4, 8))
     
-    for idx, img in enumerate(image_list):
-        axes[idx].imshow(img)
-        axes[idx].axis('off')
-    
-    # Hide empty subplots
-    for idx in range(n_images, len(axes)):
-        axes[idx].axis('off')
+    for idx in range(n_images):
+        # Top row: input images
+        axes[0, idx].imshow(input_image_list[idx])
+        axes[0, idx].axis('off')
+        axes[0, idx].set_title('Input', fontsize=10)
+        
+        # Bottom row: generated images
+        axes[1, idx].imshow(image_list[idx])
+        axes[1, idx].axis('off')
+        axes[1, idx].set_title('Generated', fontsize=10)
     
     plt.tight_layout()
     plt.savefig(f"{save_dir}/val.{iter:05d}.png")
     plt.close()
     
     pipe.ip_adapter.train()
-
 
 # Dataset
 class MyDataset(torch.utils.data.Dataset):
@@ -528,7 +529,7 @@ def main():
     text_encoder_two.eval()
     image_encoder.eval() 
 
-    image_proj_model = ImageProjModel( clip_dim=768, cross_attention_dim=3072, num_tokens=16)
+    image_proj_model = ImageProjModel( clip_dim=1024, cross_attention_dim=3072, num_tokens=16)
     # To be used for training, and saving and loading weights
     if args.pretrained_ip_adapter_path is not None:
         ip_adapter = LibreFluxIPAdapter(transformer,image_proj_model,checkpoint=args.pretrained_ip_adapter_path)
@@ -610,7 +611,7 @@ def main():
     val_dataset = MyDataset(args.val_data_json_file, size=args.resolution, image_root_path=args.val_data_root_path)
     val_dataloader = torch.utils.data.DataLoader(
         val_dataset,
-        shuffle=True,
+        shuffle=False,
         collate_fn=collate_fn,
         batch_size=1,
         num_workers=args.dataloader_num_workers,

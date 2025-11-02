@@ -14,8 +14,9 @@ class ImageProjModel(nn.Module):
 
         self.num_tokens = num_tokens
         self.cross_attention_dim = cross_attention_dim
+        self.clip_dim = clip_dim
 
-        self.linear = torch.nn.Linear(768,cross_attention_dim*num_tokens)
+        self.linear = torch.nn.Linear(clip_dim,cross_attention_dim*num_tokens)
         self.norm = torch.nn.LayerNorm(cross_attention_dim)
     
     def forward(self,input):
