@@ -113,13 +113,13 @@ class MyDataset(torch.utils.data.Dataset):
         image_file = item["image_file"]
         
         # read image
-        raw_image = Image.open(os.path.join(self.image_root_path, image_file))
+        raw_image = Image.open(os.path.join(self.image_root_path, image_file)).convert("RGB")
         
         # original size
         original_width, original_height = raw_image.size
         original_size = torch.tensor([original_height, original_width])
         
-        image_tensor = self.transform(raw_image.convert("RGB"))
+        image_tensor = self.transform(raw_image)
         # random crop
         delta_h = image_tensor.shape[1] - self.size
         delta_w = image_tensor.shape[2] - self.size
