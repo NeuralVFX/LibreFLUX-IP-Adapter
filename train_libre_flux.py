@@ -112,10 +112,17 @@ class MyDataset(torch.utils.data.Dataset):
         text = item["text"]
         image_file = item["image_file"]
         
-        # read image
-        raw_image = Image.open(os.path.join(self.image_root_path, image_file)).convert("RGB")
-        # Moving this to prevent crash
-        clip_image = self.clip_image_processor(images=raw_image.convert("RGB"), return_tensors="pt").pixel_values
+        
+        # Moving this inside try to prevent crash for corrupted images
+        try:
+            # read image
+            raw_image = Image.open(os.path.join(self.image_root_path, image_file)).convert("RGB")
+            clip_image = self.clip_image_processor(images=raw_image.convert("RGB"), return_tensors="pt").pixel_values
+        except Exception as e:
+            raw_image = Image.new('RGB', (self.size, self.size), (0, 0, 0))
+            clip_image = self.clip_image_processor(images=raw_image, return_tensors="pt").pixel_values
+            print (f'WARNING: Image failed to open: {image_file}')
+            print (e)
 
         # original size
         original_width, original_height = raw_image.size

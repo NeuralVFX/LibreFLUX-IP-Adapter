@@ -11,14 +11,14 @@
   --val_data_root_path="test_dataset" \
   --mixed_precision="bf16" \
   --resolution=512 \
-  --train_batch_size=1 \
+  --train_batch_size=6 \
   --dataloader_num_workers=4 \
   --learning_rate=1e-05 \
   --weight_decay=0.01 \
   --quantize \
   --output_dir="output_dir" \
-  --save_steps=8000 \
-  --val_steps=2000 \
-  --pretrained_ip_adapter_path="output_dir/checkpoint-0048000.pt"
+  --save_steps=1000 \
+  --val_steps=1000 \
+  --pretrained_ip_adapter_path="output_dir/checkpoint-0058000.pt"
 
 echo "Training script finished."
