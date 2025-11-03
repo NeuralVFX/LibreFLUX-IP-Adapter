@@ -114,7 +114,9 @@ class MyDataset(torch.utils.data.Dataset):
         
         # read image
         raw_image = Image.open(os.path.join(self.image_root_path, image_file)).convert("RGB")
-        
+        # Moving this to prevent crash
+        clip_image = self.clip_image_processor(images=raw_image.convert("RGB"), return_tensors="pt").pixel_values
+
         # original size
         original_width, original_height = raw_image.size
         original_size = torch.tensor([original_height, original_width])
@@ -136,7 +138,6 @@ class MyDataset(torch.utils.data.Dataset):
         )
         crop_coords_top_left = torch.tensor([top, left]) 
 
-        clip_image = self.clip_image_processor(images=raw_image, return_tensors="pt").pixel_values
 
         # drop
         drop_image_embed = 0
@@ -448,12 +449,21 @@ def main():
     text_encoder_two.eval()
     image_encoder.eval() 
 
+    global_step = 0
+
     image_proj_model = ImageProjModel( clip_dim=1024, cross_attention_dim=3072, num_tokens=16)
     # To be used for training, and saving and loading weights
     if args.pretrained_ip_adapter_path is not None:
         ip_adapter = LibreFluxIPAdapter(transformer,image_proj_model,checkpoint=args.pretrained_ip_adapter_path)
+        try:
+            global_step = int( args.pretrained_ip_adapter_path.split('-')[1].split('.')[0])
+            print (f'Resuming at Global Step: {global_step}')
+
+        except:
+            print ('Couldnt Detect Global Step from pretrained_ip_adapter_path, starting from zero')
     else:
         ip_adapter = LibreFluxIPAdapter(transformer,image_proj_model)
+
 
     ip_adapter.train()
 
@@ -559,7 +569,6 @@ def main():
     # Training Loop
     #################################
 
-    global_step = 0
     for epoch in range(0, args.num_train_epochs):
         begin = time.perf_counter()
         for step, batch in enumerate(train_dataloader):
@@ -708,8 +717,10 @@ def main():
                 avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean().item()
 
                 if accelerator.is_main_process:
-                    print("Epoch {}, step {}, data_time: {}, time: {}, step_loss: {}".format(
-                        epoch, step, load_data_time, time.perf_counter() - begin, avg_loss))
+                    if global_step % 10 == 0:
+
+                        print("Epoch {}, epoch_step {} global_step {}, data_time: {}, time: {}, step_loss: {}".format(
+                            epoch, step, global_step, load_data_time, time.perf_counter() - begin, avg_loss))
             
             ###############################################
             # Validation and Saving ( not multi gpu compatible )
