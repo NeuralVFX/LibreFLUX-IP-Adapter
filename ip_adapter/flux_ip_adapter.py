@@ -39,7 +39,7 @@ class LibreFluxIPAdapter(nn.Module):
         self.culled_transformer_blocks = {}
         for name, module in self.transformer.named_modules():
             if isinstance(module, Attention):
-                if name.startswith('transformer_block'):
+                if name.startswith('transformer_blocks') or name.startswith('single_transformer_blocks'):
                     #print (f"Using Transformer: {name}")
                     self.culled_transformer_blocks[name] = module
                 #else:
@@ -64,7 +64,7 @@ class LibreFluxIPAdapter(nn.Module):
         for name in self.culled_transformer_blocks:
             module = self.culled_transformer_blocks[name]
             print (f"Adding Attention IP Wrapper: {name}")
-            module.processor = IPFluxAttnProcessor2_0_spec(
+            module.processor = IPFluxAttnProcessor2_0_all_purpose(
                     hidden_size= hidden_size,
                     cross_attention_dim=cross_attention_dim,
                     num_heads=num_heads,

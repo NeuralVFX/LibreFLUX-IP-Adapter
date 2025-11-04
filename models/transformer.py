@@ -235,6 +235,7 @@ class FluxSingleTransformerBlock(nn.Module):
         temb: torch.FloatTensor,
         image_rotary_emb=None,
         attention_mask: Optional[torch.Tensor] = None,
+        joint_attention_kwargs: dict = {},
     ):
         residual = hidden_states
         norm_hidden_states, gate = self.norm(hidden_states, emb=temb)
@@ -246,11 +247,27 @@ class FluxSingleTransformerBlock(nn.Module):
                 attention_mask,
             )
 
+        # Adding ability to pass hidden state info to IP Adapter
+        ip_encoder_hidden_states = None
+        ip_layer_scale = 1.0
+        if 'ip_hidden_states' in joint_attention_kwargs:
+            ip_encoder_hidden_states = joint_attention_kwargs['ip_hidden_states']
+        if 'ip_layer_scale' in joint_attention_kwargs:
+            ip_layer_scale = joint_attention_kwargs['ip_layer_scale']
+            
+        # Attention.
         attn_output = self.attn(
             hidden_states=norm_hidden_states,
             image_rotary_emb=image_rotary_emb,
             attention_mask=attention_mask,
-        )
+            ip_encoder_hidden_states=ip_encoder_hidden_states,
+            layer_scale=ip_layer_scale,
+        )    
+        #attn_output = self.attn(
+        #    hidden_states=norm_hidden_states,
+        #    image_rotary_emb=image_rotary_emb,
+        #    attention_mask=attention_mask,
+        #)
 
         hidden_states = torch.cat([attn_output, mlp_hidden_states], dim=2)
         gate = gate.unsqueeze(1)
@@ -755,6 +772,8 @@ class LibreFluxTransformer2DModel(
                     temb,
                     image_rotary_emb,
                     attention_mask,
+                    joint_attention_kwargs,  # Add this line
+
                     **ckpt_kwargs,
                 )
 
@@ -764,6 +783,8 @@ class LibreFluxTransformer2DModel(
                     temb=temb,
                     image_rotary_emb=image_rotary_emb,
                     attention_mask=attention_mask,
+                    joint_attention_kwargs= joint_attention_kwargs,  # Add this line
+
                 )
 
             # controlnet residual
