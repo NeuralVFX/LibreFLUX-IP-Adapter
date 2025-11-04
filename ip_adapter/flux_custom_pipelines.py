@@ -279,7 +279,9 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
         )
         self.default_sample_size = 64
 
-        self.clip_image_processor = CLIPImageProcessor()
+        #self.clip_image_processor = CLIPImageProcessor()
+        from transformers import AutoProcessor, SiglipVisionModel
+        self.clip_image_processor = AutoProcessor.from_pretrained("google/siglip-so400m-patch14-384")
 
     def _get_t5_prompt_embeds(
         self,
@@ -911,7 +913,7 @@ class LibreFluxIpAdapterPipeline(DiffusionPipeline, SD3LoraLoaderMixin):
                                                            return_tensors="pt").pixel_values
                     clip_image = clip_image.to(device=self.image_encoder.device,
                                                dtype=self.image_encoder.dtype)
-                    image_embeds = self.image_encoder(clip_image).image_embeds
+                    image_embeds = self.image_encoder(clip_image).pooler_output
                     image_embeds_input = image_embeds
                     layer_scale = torch.Tensor([ip_adapter_scale])
                     layer_scale_input = layer_scale

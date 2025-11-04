@@ -20,6 +20,7 @@ from accelerate.utils import ProjectConfiguration
 from optimum.quanto import freeze, quantize, qfloat8, qint8, qint4, qint2, QTensor
 from diffusers import AutoencoderKL, DDPMScheduler, UNet2DConditionModel
 from transformers import CLIPTextModel, CLIPTokenizer, CLIPVisionModelWithProjection, CLIPTextModelWithProjection
+from transformers import AutoProcessor, SiglipVisionModel
 from transformers import T5TokenizerFast, T5EncoderModel
 from diffusers import FlowMatchEulerDiscreteScheduler
 from diffusers.training_utils import (
@@ -105,7 +106,8 @@ class MyDataset(torch.utils.data.Dataset):
             transforms.Normalize([0.5], [0.5]),
         ])
 
-        self.clip_image_processor = CLIPImageProcessor()
+        #self.clip_image_processor = CLIPImageProcessor()
+        self.clip_image_processor = AutoProcessor.from_pretrained("google/siglip-so400m-patch14-384")
         
     def __getitem__(self, idx):
         item = self.data[idx] 
@@ -434,9 +436,8 @@ def main():
         variant=variant,
     )
 
-    image_encoder = CLIPVisionModelWithProjection.from_pretrained(
-        args.image_encoder_path
-    )
+    image_encoder = SiglipVisionModel.from_pretrained(
+        args.image_encoder_path)
 
     noise_scheduler = FlowMatchEulerDiscreteScheduler.from_pretrained(
         args.pretrained_model_name_or_path,
@@ -458,9 +459,10 @@ def main():
 
     global_step = 0
 
-    image_proj_model = ImageProjModel( clip_dim = image_encoder.config.projection_dim,
+    image_proj_model = ImageProjModel( clip_dim = image_encoder.config.hidden_size,
                                        cross_attention_dim=3072,
-                                       num_tokens=16)
+                                       num_tokens=128)
+    
     # To be used for training, and saving and loading weights
     if args.pretrained_ip_adapter_path is not None:
         
@@ -666,7 +668,8 @@ def main():
                 #################################    
 
                 with torch.no_grad():
-                    image_embeds = image_encoder(batch["clip_images"].to(accelerator.device, dtype=weight_dtype)).image_embeds
+                    
+                    image_embeds = image_encoder(batch["clip_images"].to(accelerator.device, dtype=weight_dtype)).pooler_output
                 image_embeds_ = []
                 for image_embed, drop_image_embed in zip(image_embeds, batch["drop_image_embeds"]):
                     if drop_image_embed == 1:
