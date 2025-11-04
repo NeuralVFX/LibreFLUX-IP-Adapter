@@ -68,7 +68,7 @@ class LibreFluxIPAdapter(nn.Module):
         for name in self.culled_transformer_blocks:
             module = self.culled_transformer_blocks[name]
             print (f"Adding Attention IP Wrapper: {name}")
-            module.processor = IPFluxAttnProcessor2_0_all_purpose(
+            module.processor = IPFluxAttnProcessor2_0(
                     hidden_size= hidden_size,
                     cross_attention_dim=cross_attention_dim,
                     num_heads=num_heads,
