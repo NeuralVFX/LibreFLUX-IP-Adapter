@@ -17,12 +17,16 @@ class ImageProjModel(nn.Module):
         self.cross_attention_dim = cross_attention_dim
         self.clip_dim = clip_dim
 
-        self.linear = torch.nn.Linear(clip_dim,cross_attention_dim*num_tokens)
+        self.proj = torch.nn.Sequential(
+            torch.nn.Linear(clip_dim,clip_dim*2),
+            torch.nn.GELU(),
+            torch.nn.Linear(clip_dim*2, cross_attention_dim*num_tokens),
+        )        
         self.norm = torch.nn.LayerNorm(cross_attention_dim)
     
     def forward(self,input):
         
-        raw_proj = self.linear(input)
+        raw_proj = self.proj(input)
         reshaped_proj = raw_proj.reshape(input.shape[0],self.num_tokens,self.cross_attention_dim)
         reshaped_proj = self.norm( reshaped_proj )
 

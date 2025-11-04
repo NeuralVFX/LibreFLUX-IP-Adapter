@@ -458,10 +458,15 @@ def main():
 
     global_step = 0
 
-    image_proj_model = ImageProjModel( clip_dim=1024, cross_attention_dim=3072, num_tokens=16)
+    image_proj_model = ImageProjModel( clip_dim = image_encoder.config.projection_dim,
+                                       cross_attention_dim=3072,
+                                       num_tokens=16)
     # To be used for training, and saving and loading weights
     if args.pretrained_ip_adapter_path is not None:
-        ip_adapter = LibreFluxIPAdapter(transformer,image_proj_model,checkpoint=args.pretrained_ip_adapter_path)
+        
+        ip_adapter = LibreFluxIPAdapter(transformer,
+                                        image_proj_model,
+                                        checkpoint=args.pretrained_ip_adapter_path)
         try:
             global_step = int( args.pretrained_ip_adapter_path.split('-')[1].split('.')[0])
             print (f'Resuming at Global Step: {global_step}')
