@@ -130,14 +130,14 @@ class IPFluxAttnProcessor2_0_spec(nn.Module):
             #########################
 
 
-            if image_rotary_emb is not None:
-                from diffusers.models.embeddings import apply_rotary_emb
-                image_seq_len = orig_query.shape[2]  # Gets 1024 in your case
-                image_only_rotary = (
-                    image_rotary_emb[0][-image_seq_len:], 
-                    image_rotary_emb[1][-image_seq_len:]
-                )
-                orig_query = apply_rotary_emb(orig_query, image_only_rotary )
+            #if image_rotary_emb is not None:
+            #    from diffusers.models.embeddings import apply_rotary_emb
+            #    image_seq_len = orig_query.shape[2]  # Gets 1024 in your case
+            #    image_only_rotary = (
+            #        image_rotary_emb[0][-image_seq_len:], 
+            #        image_rotary_emb[1][-image_seq_len:]
+            #    )
+            #    orig_query = apply_rotary_emb(orig_query, image_only_rotary )
 
 
             # for ip-adapter
