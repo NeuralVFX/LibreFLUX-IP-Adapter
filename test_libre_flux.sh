@@ -16,9 +16,8 @@
   --learning_rate=1e-05 \
   --weight_decay=0.01 \
   --quantize \
-  --output_dir="output_dir_spec_no_rot_512_single_and_double_proj_mod_SIGLIP_RMS_norm" \
+  --output_dir="output_dir_spec_no_rot_512_single_and_double_proj_mod_SIGLIP_B" \
   --save_steps=1000 \
   --val_steps=500 \
-  --pretrained_ip_adapter_path="output_dir_spec_no_rot_512_single_and_double_proj_mod_SIGLIP_RMS_norm/checkpoint-0003000.pt"
 
 echo "Training script finished."

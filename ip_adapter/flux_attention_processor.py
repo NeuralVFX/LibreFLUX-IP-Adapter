@@ -29,7 +29,7 @@ class IPFluxAttnProcessor2_0(nn.Module):
 
         self.to_k_ip = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
         self.to_v_ip = nn.Linear(cross_attention_dim or hidden_size, hidden_size, bias=False)
-        self.norm_added_k = RMSNorm(128, eps=1e-5, elementwise_affine=False) 
+        #self.norm_added_k = RMSNorm(128, eps=1e-5, elementwise_affine=False) 
 
 
     def __call__(
@@ -142,7 +142,7 @@ class IPFluxAttnProcessor2_0(nn.Module):
         ip_key = ip_key.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
         ip_value = ip_value.view(batch_size, -1, attn.heads, head_dim).transpose(1, 2)
 
-        ip_key = self.norm_added_k(ip_key)
+        #ip_key = self.norm_added_k(ip_key)
         
         # Using flux stype attention here
         ip_hidden_states = F.scaled_dot_product_attention(
