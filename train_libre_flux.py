@@ -460,7 +460,7 @@ def main():
     global_step = 0
 
     image_proj_model = ImageProjModel( clip_dim = image_encoder.config.hidden_size,
-                                       cross_attention_dim=3072,
+                                       cross_attention_dim=4096,
                                        num_tokens=128)
     
     # To be used for training, and saving and loading weights

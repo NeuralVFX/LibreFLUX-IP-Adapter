@@ -10,7 +10,7 @@ from ip_adapter.flux_attention_processor import *
 
 
 class ImageProjModel(nn.Module):
-    def __init__(self, clip_dim=768, cross_attention_dim=3072, num_tokens=16):
+    def __init__(self, clip_dim=768, cross_attention_dim=4096, num_tokens=16):
         super().__init__()
 
         self.num_tokens = num_tokens
@@ -70,7 +70,7 @@ class LibreFluxIPAdapter(nn.Module):
             print (f"Adding Attention IP Wrapper: {name}")
             module.processor = IPFluxAttnProcessor2_0(
                     hidden_size= hidden_size,
-                    cross_attention_dim=cross_attention_dim,
+                    cross_attention_dim=4096,
                     num_heads=num_heads,
                     scale=1.0,
                     num_tokens=16,
