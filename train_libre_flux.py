@@ -7,6 +7,8 @@ import itertools
 import time
 import copy
 
+import matplotlib.pyplot as plt
+from matplotlib import patheffects as pe
 
 import torch
 import torch.nn.functional as F
@@ -41,8 +43,8 @@ from models import encode_prompt_helper
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-import matplotlib.pyplot as plt
-def gen_validation_images(pipe, test_dataloader, save_dir, iter):
+
+def gen_validation_images(pipe, test_dataloader, save_dir, iter, res):
     image_list = []
     input_image_list = []
 
@@ -56,8 +58,11 @@ def gen_validation_images(pipe, test_dataloader, save_dir, iter):
             prompt=batch['text'][0],
             negative_prompt="blurry",
             return_dict=False,
+            num_inference_steps=75, # Add control for step count
             ip_adapter_image=pixel_values, 
-            generator = torch.Generator(device="cuda").manual_seed(42)
+            height=res,
+            width=res, 
+            generator = torch.Generator(device="cuda").manual_seed(5)
         )
         
         image_list.append(images[0][0])
@@ -67,22 +72,27 @@ def gen_validation_images(pipe, test_dataloader, save_dir, iter):
     cols = n_images
     
     fig, axes = plt.subplots(2, cols, figsize=(cols*4, 8))
+    fig.patch.set_alpha(0)  # Make figure background transparent
     
     for idx in range(n_images):
         # Top row: input images
         axes[0, idx].imshow(input_image_list[idx])
         axes[0, idx].axis('off')
-        axes[0, idx].set_title('Input', fontsize=10)
+        title = axes[0, idx].set_title('Adapter Input', fontsize=10, color='white')
+        title.set_path_effects([pe.withStroke(linewidth=3, foreground='black')])
+        axes[0, idx].set_facecolor('none')  # Transparent subplot background
         
         # Bottom row: generated images
         axes[1, idx].imshow(image_list[idx])
         axes[1, idx].axis('off')
-        axes[1, idx].set_title('Generated', fontsize=10)
+        title = axes[1, idx].set_title('Output', fontsize=10, color='white')
+        title.set_path_effects([pe.withStroke(linewidth=3, foreground='black')])
+        axes[1, idx].set_facecolor('none')  # Transparent subplot background
     
     plt.tight_layout()
-    plt.savefig(f"{save_dir}/val.{iter:07d}.png")
+    plt.savefig(f"{save_dir}/val.{iter:07d}.png", transparent=True)
     plt.close()
-    
+
     pipe.ip_adapter.train()
 
 # Dataset
@@ -746,12 +756,17 @@ def main():
                 #save_path = os.path.join(args.output_dir, f"checkpoint-{global_step}")
                 #accelerator.save_state(save_path)
                 unwrapped_model = accelerator.unwrap_model(ip_adapter)
-                save_path = os.path.join(args.output_dir, f"checkpoint-{global_step:07d}.pt")
+                save_path = os.path.join(args.output_dir,
+                                         f"checkpoint-{global_step:07d}.pt")
                 unwrapped_model.save_pretrained(save_path)
                            
             if global_step % args.val_steps == 0:
               with torch.no_grad():
-                gen_validation_images(pipeline,val_dataloader,args.output_dir, global_step)
+                gen_validation_images(pipeline,
+                                      val_dataloader,
+                                      args.output_dir,
+                                      global_step,
+                                      args.resolution)
 
             begin = time.perf_counter()
                 
