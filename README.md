@@ -9,7 +9,7 @@ The intent of this repo is to make it possible to train an IP-Adapter based on L
 
 **Disclaimer**: This is pieced together by modifying and borrowing from these repos:
 - https://github.com/tencent-ailab/IP-Adapter (Training code forked from here)
-- https://github.com/InstantX-research/InstantX-Flux-IP-Adapter (Architecture referenced from here)
+- [https://github.com/InstantX-research/InstantX-Flux-IP-Adapter](https://huggingface.co/InstantX/FLUX.1-dev-IP-Adapter) (Architecture referenced from here)
 - https://huggingface.co/jimmycarter/LibreFLUX
 - https://github.com/bghira/SimpleTuner
 
