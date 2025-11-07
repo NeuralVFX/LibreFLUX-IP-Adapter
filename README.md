@@ -7,7 +7,7 @@ The intent of this repo is to make it possible to train an IP-Adapter based on L
 - Running inference with CFG
 - Using IP-Adapter architecture for image-conditioned generation
 
-**Disclaimer**: This is pieced together by modifying and borrowing from these repos:
+**Disclaimer**: This is pieced together by modifying borrowing and referencing these repos:
 - https://github.com/tencent-ailab/IP-Adapter (Training code forked from here)
 - [https://github.com/InstantX-research/InstantX-Flux-IP-Adapter](https://huggingface.co/InstantX/FLUX.1-dev-IP-Adapter) (Attention Wrapper in this Style)
 - https://huggingface.co/jimmycarter/LibreFLUX
