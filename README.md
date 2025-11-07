@@ -20,7 +20,10 @@ Use at your own risk!
 ### Environment
 
 Create a conda environment:
-`conda create -n python=3.11 conda activate`
+```
+conda create -n python=3.11
+conda activate
+```
 
 ### Installation
 
