@@ -67,8 +67,8 @@ python train_libre_flux.py
 ```
 ### Key Arguments
 
-- `--pretrained_model_name_or_path`: Base LibreFLUX model to use
-- `--image_encoder_path`: CLIP image encoder for IP-Adapter
+- `--pretrained_model_name_or_path`: Base model to use ( This is customized for LibreFlux and/or variants of it )
+- `--image_encoder_path`: Image encoder for IP-Adapter ( Kinda hard coded for `google/siglip-so400m-patch14-384` )
 - `--data_json_file`: Path to your training data JSON
 - `--data_root_path`: Root directory containing training images
 - `--val_data_json_file`: Path to validation data JSON
@@ -91,7 +91,7 @@ To train on limited GPU memory:
 ### Resuming Training
 
 To resume from a checkpoint:
---pretrained_ip_adapter_path="./output/checkpoint-3000.pt"
+- `--pretrained_ip_adapter_path="./output/checkpoint-3000.pt"`
 
 ## Inference
 
