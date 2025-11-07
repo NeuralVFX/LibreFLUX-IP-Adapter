@@ -11,13 +11,15 @@
   --val_data_root_path="test_dataset" \
   --mixed_precision="bf16" \
   --resolution=512 \
-  --train_batch_size=6 \
+  --train_batch_size=4 \
   --dataloader_num_workers=8 \
   --learning_rate=1e-05 \
   --weight_decay=0.01 \
   --quantize \
-  --output_dir="output_dir_spec_no_rot_512_single_and_double_proj_mod_SIGLIP_B" \
+  --output_dir="instantX_finetune_non_att_to_att" \
   --save_steps=1000 \
   --val_steps=500 \
+  --pretrained_ip_adapter_path="instantX_finetune/checkpoint-0003000.pt" \
+
 
 echo "Training script finished."
