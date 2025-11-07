@@ -71,7 +71,7 @@ python train_libre_flux.py
 ### Key Arguments
 
 - `--pretrained_model_name_or_path`: Base model to use ( This is customized for LibreFlux and/or variants of it )
-- `--image_encoder_path`: Image encoder for IP-Adapter ( Kinda hard coded for `google/siglip-so400m-patch14-384` )
+- `--image_encoder_path`: Image encoder for IP-Adapter ( Hard coded for `google/siglip-so400m-patch14-384` )
 - `--data_json_file`: Path to your training data JSON
 - `--data_root_path`: Root directory containing training images
 - `--val_data_json_file`: Path to validation data JSON
