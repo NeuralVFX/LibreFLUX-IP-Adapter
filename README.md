@@ -20,19 +20,26 @@ Use at your own risk!
 ### Environment
 
 Create a conda environment:
-conda create -n python=3.11 conda activate
+`conda create -n python=3.11 conda activate`
 
 ### Installation
 
 - Clone the repository
 - Change the current directory to `LibreFLUX-IP-Adapter/`
 - Install the required dependencies using the `requirements.txt` file
-git clone https://github.com/YourUsername/LibreFLUX-IP-Adapter/ cd LibreFLUX-IP-Adapter/ pip install -r requirements.txt
+```
+git clone https://github.com/YourUsername/LibreFLUX-IP-Adapter/
+cd LibreFLUX-IP-Adapter/
+pip install -r requirements.txt
+```
 
 ### Dataset
 
 Your dataset should be structured as a JSON file with the following format:
-[ {"image_file": "image1.jpg", "text": "A description of the image"}, {"image_file": "image2.jpg", "text": "Another description"} ]
+```
+[{"image_file": "image1.jpg", "text": "A description of the image"},
+{"image_file": "image2.jpg", "text": "Another description"} ]
+```
 
 Place your images in a root directory and reference them in the JSON file.
 
@@ -88,7 +95,7 @@ To resume from a checkpoint:
 
 ## Inference
 
-Coming soon!
+**Coming soon!**
 
 ## Model Architecture
 
