@@ -62,7 +62,7 @@ def gen_validation_images(pipe, test_dataloader, save_dir, iter, res):
             ip_adapter_image=pixel_values, 
             height=res,
             width=res, 
-            generator = torch.Generator(device="cuda").manual_seed(5)
+            generator = torch.Generator(device="cuda").manual_seed(19005)
         )
         
         image_list.append(images[0][0])
