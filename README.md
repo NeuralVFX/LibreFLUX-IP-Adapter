@@ -38,13 +38,16 @@ pip install -r requirements.txt
 
 ### Dataset
 
-Your dataset should be structured as a JSON file with the following format:
+Place your images in a root directory and reference them in the JSON file.
+
+Your JSON file should be in the following format:
 ```
 [{"image_file": "image1.jpg", "text": "A description of the image"},
 {"image_file": "image2.jpg", "text": "Another description"} ]
 ```
 
-Place your images in a root directory and reference them in the JSON file.
+I've included a mini dataset example ( used for validation ) in the `test_dataset` directory
+
 
 ## Training
 
@@ -76,7 +79,7 @@ python train_libre_flux.py
 - `--data_root_path`: Root directory containing training images
 - `--val_data_json_file`: Path to validation data JSON
 - `--val_data_root_path`: Root directory containing validation images
-- `--resolution`: Training resolution (512 or 1024)
+- `--resolution`: Training resolution
 - `--train_batch_size`: Batch size per GPU
 - `--quantize`: Enable int8 quantization to save memory
 - `--save_steps`: Save checkpoint every N steps
