@@ -102,8 +102,3 @@ To resume from a checkpoint:
 ## Inference
 
 **Coming soon!**
-
-## Model Architecture
-
-The IP-Adapter wraps the LibreFLUX transformer's singe and double attention blocks with custom processors that inject image conditioning via additional key-value projections. During training, only the IP-Adapter parameters are updated while the base model remains frozen.
-
