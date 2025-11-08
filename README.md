@@ -1,5 +1,5 @@
 # LibreFLUX-IP-Adapter
-![LibreFLUX-IP-Adapter example](examples/matrix_dark.png)
+![LibreFLUX-IP-Adapter example](examples/matrix_edge.png)
 
 The intent of this repo is to make it possible to train an IP-Adapter based on LibreFLUX. This means:
 - Incorporating Attention Masking
